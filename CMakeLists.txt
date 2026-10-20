@@ -116,10 +116,15 @@ target_link_libraries(YSpecInternal INTERFACE
 # and position-independent either way so that it can go into a Python module.
 add_library(YSpec
   src/AngularFunctions.cpp
+  src/Coefficients.cpp
   src/Input.cpp
+  src/InputSections.cpp
+  src/Instrument.cpp
+  src/Location.cpp
   src/Model.cpp
   src/RadialSolver.cpp
   src/Run.cpp
+  src/Snapshots.cpp
   src/Synthetics.cpp
   src/TimeSeries.cpp)
 add_library(YSpec::YSpec ALIAS YSpec)
@@ -133,19 +138,23 @@ if(YSPEC_WITH_OPENMP)
   target_link_libraries(YSpec PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# The program.
-add_executable(yspec app/yspec.cpp)
-target_link_libraries(yspec PRIVATE YSpec::YSpec)
-target_compile_definitions(yspec PRIVATE YSPEC_VERSION="${PROJECT_VERSION}")
-target_compile_options(yspec PRIVATE ${YSPEC_WARNINGS})
-if(YSPEC_WITH_OPENMP)
-  target_link_libraries(yspec PRIVATE OpenMP::OpenMP_CXX)
-endif()
+# The programs, one for each kind of output.
+set(YSPEC_PROGRAMS yspec yspec-snapshot)
+foreach(program IN LISTS YSPEC_PROGRAMS)
+  add_executable(${program} app/${program}.cpp)
+  target_link_libraries(${program} PRIVATE YSpec::YSpec)
+  target_compile_definitions(${program} PRIVATE
+    YSPEC_VERSION="${PROJECT_VERSION}")
+  target_compile_options(${program} PRIVATE ${YSPEC_WARNINGS})
+  if(YSPEC_WITH_OPENMP)
+    target_link_libraries(${program} PRIVATE OpenMP::OpenMP_CXX)
+  endif()
+endforeach()
 
-# Only the program is installed for now; exporting the library as a CMake
+# Only the programs are installed for now; exporting the library as a CMake
 # package has to wait until planetmodel exports one of its own.
 include(GNUInstallDirs)
-install(TARGETS yspec RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS ${YSPEC_PROGRAMS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(PROJECT_IS_TOP_LEVEL)
   option(YSPEC_BUILD_TESTS "Build the test suite" ON)

@@ -2,10 +2,12 @@
 
 /**
  * @file Input.hpp
- * @brief Reads a calculation from a JSON file.
+ * @brief Reads the input files of the programs.
  *
- * @details The file is strict JSON (RFC 8259). Its members, with the units in
- * their names, are:
+ * @details The files are strict JSON (RFC 8259). The programs share most of
+ * their members: those of the yspec program, which computes seismograms, are
+ * shown here, with the units in their names; "output" and "receivers" are its
+ * own, and the rest are shared.
  *
  * @code{.json}
  * {
@@ -28,22 +30,60 @@
  *                             "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 }
  *     }
  *   ],
- *   "receivers": { "depth_km": 3, "locations": [[0, 4], [0, 6]] },
+ *   "receivers": [
+ *     { "depth_km": 3, "locations": [[0, 4], [0, 6]],
+ *       "instrument": "ANMO.pz" },
+ *     { "depth_km": [3, 100],
+ *       "profile": { "from": [0, 0], "to": [0, 90], "count": 10 } },
+ *     { "depth_km": 3,
+ *       "profile": { "from": [0, 0], "azimuth_deg": 45,
+ *                    "distances_deg": [10, 170], "count": 17 } }
+ *   ],
  *   "solver": { "tolerance": 1e-5, "start_decay": 11 }
  * }
  * @endcode
  *
  * "gravity" is one of "none", "cowling" and "full"; "quantity" one of
  * "displacement", "velocity" and "acceleration". The moment tensor is in
- * spherical coordinates at the source (r up, theta south, phi east). Receiver
- * locations are [latitude, longitude] in geographic degrees. The filter is a
+ * spherical coordinates at the source (r up, theta south, phi east).
+ * Locations are [latitude, longitude] in geographic degrees. The filter is a
  * raised-cosine taper rising between its first two corners and falling
  * between its last two; it may be left out. "attenuation", "gravity", the
  * corrections, "degrees.min", the filter, the sources' names and "solver"
  * have defaults (true, "full", false, 0, none, their numbers from 1, and the
- * solver's defaults). Relative paths are relative to the directory of the
- * input file. A member not listed here is an error, so that a misspelt one is
- * not silently ignored.
+ * solver's defaults).
+ *
+ * "receivers" is one group or an array of them. A group has one depth or
+ * several, and either a list of locations or a profile along a great circle
+ * (see GreatCircle), from one point to another or from a point at an azimuth
+ * between two distances, with a number of points equally spaced. The
+ * receivers are numbered group by group and, within a group, depth by depth.
+ * A group's optional instrument is a SAC pole-zero file (see
+ * ReadSacPoleZero).
+ *
+ * The yspec-snapshot program has "output" and "snapshots" instead:
+ *
+ * @code{.json}
+ * {
+ *   "output": { "prefix": "snapshot", "quantity": "displacement" },
+ *   "snapshots": {
+ *     "times_s": [300, 600, 900],
+ *     "depths_km": { "min": 25, "max": 2850, "count": 114 },
+ *     "distances_deg": { "min": 0, "max": 180, "count": 361 },
+ *     "azimuths_deg": [30, 210]
+ *   }
+ * }
+ * @endcode
+ *
+ * Each of the times, depths, distances and azimuths is one number, an array
+ * of them, or a range of "count" values equally spaced from "min" to "max",
+ * both included. The grid is in the frame of each source: see
+ * ComputeSnapshots. "time_series.time_step_s" may be left out, by either
+ * program: it is then a quarter of the period of the highest frequency.
+ *
+ * Relative paths are relative to the directory of the input file. A member
+ * not listed here is an error, so that a misspelt one is not silently
+ * ignored.
  */
 
 #include <filesystem>
@@ -52,12 +92,13 @@
 
 #include "Calculation.hpp"
 #include "Receiver.hpp"
+#include "Snapshots.hpp"
 #include "Source.hpp"
 
 namespace YSpec {
 
-/** @brief A calculation read from a file, in SI units. */
-struct Input {
+/** @brief The input of the yspec program, in SI units. */
+struct SeismogramInput {
   std::filesystem::path model;      ///< The model deck.
   Calculation calculation;          ///< What to compute.
   std::vector<Source> sources;      ///< The sources.
@@ -67,9 +108,26 @@ struct Input {
 };
 
 /**
- * @brief Reads a calculation from a JSON file.
+ * @brief Reads the input of the yspec program.
  * @throws std::runtime_error naming the file, the member and the fault.
  */
-Input ReadInput(const std::filesystem::path& path);
+SeismogramInput ReadSeismogramInput(const std::filesystem::path& path);
+
+/** @brief The input of the yspec-snapshot program, in SI units. */
+struct SnapshotInput {
+  std::filesystem::path model;     ///< The model deck.
+  Calculation calculation;         ///< What to compute.
+  std::vector<Source> sources;     ///< The sources.
+  std::vector<std::string> names;  ///< The names of the sources.
+  SnapshotGrid grid;               ///< The points, around each source.
+  std::vector<double> times;       ///< The times after the origin (s).
+  std::filesystem::path prefix;    ///< The prefix of the output files.
+};
+
+/**
+ * @brief Reads the input of the yspec-snapshot program.
+ * @throws std::runtime_error naming the file, the member and the fault.
+ */
+SnapshotInput ReadSnapshotInput(const std::filesystem::path& path);
 
 }  // namespace YSpec

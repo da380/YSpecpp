@@ -18,7 +18,6 @@
  */
 
 #include <cstddef>
-#include <functional>
 #include <span>
 
 #include "Calculation.hpp"
@@ -28,12 +27,6 @@
 #include "Source.hpp"
 
 namespace YSpec {
-
-/**
- * @brief Called as frequencies are completed, with the number done and the
- * number in all; called from one thread at a time.
- */
-using Progress = std::function<void(std::size_t, std::size_t)>;
 
 /**
  * @brief Computes synthetic seismograms.

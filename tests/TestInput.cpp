@@ -5,6 +5,9 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -43,7 +46,7 @@ std::string Document(const std::string& extra = "",
 }
 
 TEST(Input, ReadsTheExample) {
-  const auto input = ReadInput(kExample);
+  const auto input = ReadSeismogramInput(kExample);
   const auto& c = input.calculation;
   EXPECT_EQ(input.model, kExample.parent_path() / "prem.200");
   EXPECT_EQ(input.prefix, kExample.parent_path() / "yspec.out");
@@ -66,7 +69,7 @@ TEST(Input, ReadsTheExample) {
 }
 
 TEST(Input, AppliesTheDefaults) {
-  const auto input = ReadInput(Write("defaults.json", Document()));
+  const auto input = ReadSeismogramInput(Write("defaults.json", Document()));
   const auto& c = input.calculation;
   EXPECT_EQ(c.gravity, Gravity::Full);
   EXPECT_TRUE(c.attenuation);
@@ -84,7 +87,7 @@ TEST(Input, ReadsSeveralNamedSources) {
     "moment_tensor_Nm": { "rr": 0, "rt": 1, "rp": 0, "tt": 0, "tp": 0, "pp": 0 }
   }])");
   text.replace(text.find("}],"), 2, "}" + second);
-  const auto input = ReadInput(Write("sources.json", text));
+  const auto input = ReadSeismogramInput(Write("sources.json", text));
   ASSERT_EQ(input.sources.size(), 2u);
   EXPECT_EQ(input.names, (std::vector<std::string>{"a", "b"}));
   EXPECT_DOUBLE_EQ(input.sources[1].depth, 600e3);
@@ -95,7 +98,7 @@ TEST(Input, RefusesAnUnknownMember) {
   const auto path =
       Write("unknown.json", Document(R"( "gravitation": "none",)"));
   try {
-    (void)ReadInput(path);
+    (void)ReadSeismogramInput(path);
     FAIL() << "no exception";
   } catch (const std::runtime_error& e) {
     EXPECT_NE(std::string(e.what()).find("gravitation"), std::string::npos)
@@ -106,7 +109,7 @@ TEST(Input, RefusesAnUnknownMember) {
 TEST(Input, RefusesAnUnknownChoice) {
   const auto path = Write("choice.json", Document(R"( "gravity": "self",)"));
   try {
-    (void)ReadInput(path);
+    (void)ReadSeismogramInput(path);
     FAIL() << "no exception";
   } catch (const std::runtime_error& e) {
     const auto message = std::string(e.what());
@@ -119,25 +122,142 @@ TEST(Input, RefusesValuesOutOfRange) {
        {R"( "solver": { "tolerance": -1e-6 },)",
         R"( "solver": { "start_decay": 0 },)",
         R"( "filter_mHz": [5, 5, 5, 5],)", R"( "filter_mHz": [1, 2, 4, 3],)"}) {
-    EXPECT_THROW((void)ReadInput(Write("range.json", Document(extra))),
-                 std::runtime_error)
+    EXPECT_THROW(
+        (void)ReadSeismogramInput(Write("range.json", Document(extra))),
+        std::runtime_error)
         << extra;
   }
   auto text = Document();
   text.replace(text.find("[[10, 20]]"), 10, "[[100, 20]]");
-  EXPECT_THROW((void)ReadInput(Write("latitude.json", text)),
+  EXPECT_THROW((void)ReadSeismogramInput(Write("latitude.json", text)),
                std::runtime_error);
-  EXPECT_THROW(
-      (void)ReadInput(Write("name.json", Document("", R"( "name": "a/b",)"))),
-      std::runtime_error);
+  EXPECT_THROW((void)ReadSeismogramInput(
+                   Write("name.json", Document("", R"( "name": "a/b",)"))),
+               std::runtime_error);
 }
 
 TEST(Input, RefusesAMissingMember) {
   auto text = Document();
   text.replace(text.find("\"degrees\""), std::string("\"degrees\"").size(),
                "\"degree\"");
-  EXPECT_THROW((void)ReadInput(Write("missing.json", text)),
+  EXPECT_THROW((void)ReadSeismogramInput(Write("missing.json", text)),
                std::runtime_error);
+}
+
+// A minimal document with its receivers replaced.
+std::string WithReceivers(const std::string& receivers) {
+  auto text = Document();
+  const auto old =
+      std::string(R"("receivers": { "depth_km": 0, "locations": [[10, 20]] })");
+  text.replace(text.find(old), old.size(), "\"receivers\": " + receivers);
+  return text;
+}
+
+TEST(Input, ReadsGroupsOfReceivers) {
+  Write("station.pz", "* INPUT UNIT : M\nZEROS 1\nPOLES 1\n-1 0\n");
+  const auto input = ReadSeismogramInput(Write("groups.json", WithReceivers(R"([
+    { "depth_km": [0, 10], "locations": [[1, 2], [3, 4], [5, 6]] },
+    { "depth_km": 3, "profile": { "from": [0, 0], "to": [0, 40],
+                                  "count": 5 },
+      "instrument": "station.pz" },
+    { "depth_km": 0, "profile": { "from": [10, 20], "azimuth_deg": 90,
+                                  "distances_deg": [10, 30], "count": 3 } }
+  ])")));
+  const auto& receivers = input.receivers;
+  ASSERT_EQ(receivers.size(), 6u + 5u + 3u);
+  // Each depth in turn, with every location at each.
+  EXPECT_DOUBLE_EQ(receivers[2].depth, 0);
+  EXPECT_DOUBLE_EQ(receivers[2].location.latitude, 5);
+  EXPECT_DOUBLE_EQ(receivers[3].depth, 10e3);
+  EXPECT_DOUBLE_EQ(receivers[3].location.latitude, 1);
+  EXPECT_FALSE(receivers[0].instrument.has_value());
+  // The profile between two points on the equator.
+  EXPECT_NEAR(receivers[7].location.longitude, 10, 1e-9);
+  EXPECT_NEAR(receivers[7].location.latitude, 0, 1e-9);
+  ASSERT_TRUE(receivers[7].instrument.has_value());
+  EXPECT_EQ(receivers[7].instrument->poles.size(), 1u);
+  // The profile at an azimuth.
+  const auto profile = GreatCircle({10, 20}, 90, 10, 30, 3);
+  for (auto i : {0, 1, 2}) {
+    EXPECT_EQ(receivers[11 + i].location.latitude, profile[i].latitude);
+    EXPECT_EQ(receivers[11 + i].location.longitude, profile[i].longitude);
+  }
+}
+
+TEST(Input, RefusesFaultyGroupsOfReceivers) {
+  for (const auto& receivers :
+       {R"({ "depth_km": 0 })",
+        R"({ "depth_km": 0, "locations": [[0, 0]],
+                "profile": { "from": [0, 0], "to": [0, 9], "count": 2 } })",
+        R"({ "depth_km": [], "locations": [[0, 0]] })",
+        R"({ "depth_km": [-1], "locations": [[0, 0]] })",
+        R"({ "depth_km": 0, "locations": [] })", R"([])",
+        R"({ "depth_km": 0,
+                "profile": { "from": [0, 0], "to": [0, 180], "count": 2 } })",
+        R"({ "depth_km": 0,
+                "profile": { "from": [0, 0], "to": [0, 9], "count": 0 } })",
+        R"({ "depth_km": 0,
+                "profile": { "from": [0, 0], "to": [0, 9],
+                             "azimuth_deg": 0, "count": 2 } })",
+        R"({ "depth_km": 0,
+                "profile": { "from": [0, 0], "azimuth_deg": 0,
+                             "distances_deg": [0, 190], "count": 2 } })",
+        R"({ "depth_km": 0, "locations": [[0, 0]],
+                "instrument": "no-such-file.pz" })"}) {
+    EXPECT_THROW((void)ReadSeismogramInput(
+                     Write("receivers.json", WithReceivers(receivers))),
+                 std::runtime_error)
+        << receivers;
+  }
+}
+
+TEST(Input, ReadsTheSnapshotExample) {
+  const auto path = fs::path(YSPEC_EXAMPLES_DIR) / "snapshot.json";
+  const auto input = ReadSnapshotInput(path);
+  EXPECT_EQ(input.prefix, path.parent_path() / "snapshot");
+  EXPECT_EQ(input.times, (std::vector<double>{300, 600, 900, 1200}));
+  ASSERT_EQ(input.grid.depths.size(), 58u);
+  EXPECT_DOUBLE_EQ(input.grid.depths.front(), 25e3);
+  EXPECT_DOUBLE_EQ(input.grid.depths[1], 75e3);
+  EXPECT_DOUBLE_EQ(input.grid.depths.back(), 2875e3);
+  ASSERT_EQ(input.grid.distances.size(), 181u);
+  EXPECT_DOUBLE_EQ(input.grid.distances[90], 90);
+  EXPECT_EQ(input.grid.azimuths, (std::vector<double>{30, 210}));
+  // Without a time step, a quarter of the shortest period.
+  EXPECT_DOUBLE_EQ(input.calculation.sampling.timeStep, 0.25 / 15e-3);
+}
+
+TEST(Input, RefusesFaultySnapshots) {
+  const auto good = std::string(R"({
+  "model": "prem.200",
+  "output": { "prefix": "out" },
+  "degrees": { "max": 10 },
+  "frequencies_mHz": { "min": 0.2, "max": 10 },
+  "time_series": { "length_min": 30 },
+  "sources": [{ "depth_km": 10, "latitude": 0, "longitude": 0,
+    "moment_tensor_Nm": { "rr": 1, "rt": 0, "rp": 0, "tt": 0, "tp": 0,
+                          "pp": 0 } }],
+  "snapshots": { "times_s": 600, "depths_km": 100,
+                 "distances_deg": { "min": 0, "max": 180, "count": 19 },
+                 "azimuths_deg": [0] }
+})");
+  const auto input = ReadSnapshotInput(Write("snapshot.json", good));
+  EXPECT_EQ(input.grid.distances.size(), 19u);
+  for (const auto& [from, to] :
+       std::initializer_list<std::pair<std::string_view, std::string_view>>{
+           {R"("times_s": 600)", R"("times_s": 1900)"},
+           {R"("times_s": 600)", R"("times_s": [])"},
+           {R"("depths_km": 100)", R"("depths_km": -1)"},
+           {R"("max": 180)", R"("max": 181)"},
+           {R"("count": 19)", R"("count": 0)"},
+           {R"("azimuths_deg": [0])", R"("azimuth_deg": [0])"},
+           {R"("snapshots")", R"("receivers")"}}) {
+    auto text = good;
+    text.replace(text.find(from), from.size(), to);
+    EXPECT_THROW((void)ReadSnapshotInput(Write("snapshot.json", text)),
+                 std::runtime_error)
+        << to;
+  }
 }
 
 }  // namespace

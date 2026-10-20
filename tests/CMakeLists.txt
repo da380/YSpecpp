@@ -29,9 +29,11 @@ yspec_add_test(TestNumerics)
 yspec_add_test(TestSolver)
 yspec_add_test(TestReceivers)
 yspec_add_test(TestInput)
+yspec_add_test(TestInstrument)
 yspec_add_test(TestNormalModes)
 yspec_add_test(TestHomogeneousSphere)
 yspec_add_test(TestSynthetics)
+yspec_add_test(TestSnapshots)
 yspec_add_test(TestRun)
 
 # End-to-end cases, compared with seismograms from the Fortran YSpec (made by

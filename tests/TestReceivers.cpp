@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <YSpec/Location.hpp>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 #include <vector>
 
 #include "AngularFunctions.hpp"
@@ -40,6 +42,46 @@ TEST(Geometry, HandlesCoincidentAndAntipodalPoints) {
   EXPECT_NEAR(antipode.distance, pi, 1e-12);
   EXPECT_TRUE(std::isfinite(antipode.phi));
   EXPECT_TRUE(std::isfinite(antipode.rotation));
+}
+
+TEST(GreatCircle, PlacesPointsAtTheDistancesAndAzimuthAsked) {
+  // Measured as the seismograms measure them, from a source at the start.
+  const auto source = Location{35, -120};
+  const auto azimuth = 50.0;
+  const auto points = GreatCircle(source, azimuth, 0, 180, 37);
+  ASSERT_EQ(points.size(), 37u);
+  EXPECT_EQ(points.front().latitude, source.latitude);
+  EXPECT_EQ(points.front().longitude, source.longitude);
+  for (auto i = std::size_t{1}; i + 1 < points.size(); ++i) {
+    const auto g = Geometry(points[i], source);
+    EXPECT_NEAR(g.distance * 180 / pi, 5.0 * static_cast<double>(i), 1e-9);
+    // phi is pi less the azimuth of the receiver from the source.
+    EXPECT_NEAR(g.phi, pi - azimuth * pi / 180, 1e-9);
+  }
+  EXPECT_NEAR(Geometry(points.back(), source).distance, pi, 1e-9);
+}
+
+TEST(GreatCircle, JoinsTwoPointsWithEqualSteps) {
+  const auto from = Location{-30, 10};
+  const auto to = Location{50, 140};
+  const auto points = GreatCircle(from, to, 9);
+  ASSERT_EQ(points.size(), 9u);
+  EXPECT_EQ(points.front().latitude, from.latitude);
+  EXPECT_EQ(points.back().longitude, to.longitude);
+  const auto total = Geometry(to, from).distance;
+  for (auto i = std::size_t{0}; i < points.size(); ++i) {
+    // Each point lies on the great circle, at its share of the distance.
+    const auto along = Geometry(points[i], from).distance;
+    EXPECT_NEAR(along, total * static_cast<double>(i) / 8, 1e-9);
+    EXPECT_NEAR(along + Geometry(to, points[i]).distance, total, 1e-9);
+  }
+  EXPECT_EQ(GreatCircle(from, to, 1).size(), 1u);
+}
+
+TEST(GreatCircle, RefusesWhatIsUndefined) {
+  EXPECT_THROW((void)GreatCircle({0, 0}, {0, 180}, 5), std::invalid_argument);
+  EXPECT_THROW((void)GreatCircle({0, 0}, {10, 10}, 0), std::invalid_argument);
+  EXPECT_THROW((void)GreatCircle({0, 0}, 0, 0, 10, 0), std::invalid_argument);
 }
 
 TEST(AngularFunctions, AgreeWithTheStandardLibrary) {

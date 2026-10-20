@@ -19,6 +19,8 @@
 #include <cmath>
 #include <numbers>
 
+#include "Sphere.hpp"
+
 namespace YSpec {
 
 /**
@@ -36,32 +38,22 @@ struct ReceiverGeometry {
 inline ReceiverGeometry Geometry(const Location& receiver,
                                  const Location& source) {
   constexpr auto pi = std::numbers::pi;
-  constexpr auto degree = pi / 180;
-  // The ratio of the tangents of geocentric and geographic latitude.
-  constexpr auto geocentric = 0.993277;
+  using Sphere::Degree;
 
   auto offPole = [](double latitude) {
     if (latitude == 90) return 89.98;
     if (latitude == -90) return -89.98;
     return latitude;
   };
-  auto colatitude = [&](double latitude) {
-    return pi / 2 -
-           std::atan(geocentric * std::tan(offPole(latitude) * degree));
-  };
-  const auto thetaR = colatitude(receiver.latitude);
-  const auto thetaS = colatitude(source.latitude);
-  const auto phiR = receiver.longitude * degree;
-  const auto phiS = source.longitude * degree;
+  const auto thetaR = Sphere::Colatitude(offPole(receiver.latitude));
+  const auto thetaS = Sphere::Colatitude(offPole(source.latitude));
+  const auto phiR = receiver.longitude * Degree;
+  const auto phiS = source.longitude * Degree;
 
   // The distance from the cross and dot products of the unit vectors, which
   // keeps its precision near 0 and pi where an arc cosine does not.
-  auto unit = [](double theta, double phi) {
-    return std::array{std::sin(theta) * std::cos(phi),
-                      std::sin(theta) * std::sin(phi), std::cos(theta)};
-  };
-  const auto xR = unit(thetaR, phiR);
-  const auto xS = unit(thetaS, phiS);
+  const auto xR = Sphere::Unit(thetaR, phiR);
+  const auto xS = Sphere::Unit(thetaS, phiS);
   const auto cross =
       std::hypot(xR[1] * xS[2] - xR[2] * xS[1], xR[2] * xS[0] - xR[0] * xS[2],
                  xR[0] * xS[1] - xR[1] * xS[0]);

@@ -40,16 +40,21 @@ version, which gives the same results.
 
 ## Running
 
+There is a program for each kind of output: `yspec` computes seismograms at
+receivers, and `yspec-snapshot` the wavefield at chosen times on a grid
+around each source. They read JSON files that share most of their members.
+
 ```sh
 build/bin/yspec examples/input.json
+build/bin/yspec-snapshot examples/snapshot.json
 ```
 
-The number of threads is set with `OMP_NUM_THREADS`. One file is written per
+The number of threads is set with `OMP_NUM_THREADS`. For `yspec`, one file is written per
 receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the receivers are
 listed; with several sources, one per source and receiver,
 `<prefix>.<source>.1`, .... Each line holds the time after the origin time (s)
 and the vertical (up), north and east components, in SI units of the quantity
-asked for.
+asked for, or in the units of the instrument's output where there is one.
 
 ### Input
 
@@ -91,7 +96,8 @@ The calculation is read from a JSON file:
 - `degrees`: the spherical harmonic degrees summed (`min` defaults to 0).
 - `frequencies_mHz`: the band computed; `time_series` the length of the
   seismograms and their sampling. The Nyquist frequency must lie above the
-  highest frequency.
+  highest frequency; without `time_step_s` the step is a quarter of the
+  shortest period.
 - `filter_mHz`: an optional raised-cosine taper, rising from zero to one
   between its first two corners and falling back between its last two.
 - `sources`: one or more, each with its hypocentre (geographic latitude) and
@@ -100,15 +106,79 @@ The calculation is read from a JSON file:
   share the radial solves, so extra ones cost little. The optional `name`
   labels the output files when there are several sources (by default the
   sources are numbered from 1).
-- `receivers`: their depth and locations as `[latitude, longitude]` pairs.
-  The sources and the receivers must lie in the same solid region of the
-  model: in `prem.200`, below its 3 km ocean.
+- `receivers`: a group of receivers, or an array of groups (see below). The
+  sources and the receivers must lie in the same solid region of the model:
+  in `prem.200`, below its 3 km ocean.
 - `solver.tolerance`: the local error allowed per integration step, relative
   to the size of the solution (default `1e-5`; see below), and
   `solver.start_decay`, the decay in e-folds below a turning point at which an
   integration starts (default 11).
 
 A member not listed here is an error, so that a misspelt one is not ignored.
+
+Each group of receivers has its depth, or several, and its places: either a
+list of `locations`, or a `profile` along a great circle, from one point `to`
+another or from a point at an azimuth (clockwise from north) between two
+distances, with `count` points equally spaced, both ends included:
+
+```json
+"receivers": [
+  { "depth_km": 3, "locations": [[34.95, -106.46]], "instrument": "ANMO.pz" },
+  { "depth_km": [3, 100, 200],
+    "profile": { "from": [36.87, 35.58], "azimuth_deg": 60,
+                 "distances_deg": [10, 90], "count": 41 } }
+]
+```
+
+Receivers are numbered group by group and, within a group, depth by depth,
+with every place at each depth. Profiles are great circles of the spherical
+model, so a profile that starts at a source has points at exactly the
+epicentral distances asked for. The optional `instrument` is a SAC pole-zero
+file, applied to every component at the group's receivers; its output (counts,
+for the files of the IRIS DMC) is then recorded. A comment `* INPUT UNIT : M`
+(or `M/S`, or `M/S**2`) in the file says what motion the instrument responds
+to, which is otherwise displacement, as in SAC; the conversion from the
+quantity computed is exact. The response is applied at the same complex
+frequencies as the rest of the calculation, which gives the exact causal
+response.
+
+### Snapshots
+
+`yspec-snapshot` reads the same members as `yspec`, except that its `output`
+has only `prefix` and `quantity`, and that `snapshots` replaces `receivers`:
+
+```json
+"snapshots": {
+  "times_s": [300, 600, 900, 1200],
+  "depths_km": { "min": 25, "max": 2875, "count": 58 },
+  "distances_deg": { "min": 0, "max": 180, "count": 181 },
+  "azimuths_deg": [30, 210]
+}
+```
+
+The grid is in the frame of each source: depths, distances from it and
+azimuths at it (clockwise from north). Each of the four is one number, an
+array of them, or a range of `count` values from `min` to `max`, both
+included. Two azimuths 180 degrees apart give a cross-section through the
+source along a great circle; one depth and many azimuths, a map around it.
+For now the points must lie in the solid region that holds the source (in
+PREM, between the sea floor and the core-mantle boundary).
+
+One file is written for each time, `<prefix>.1`, `<prefix>.2`, ... (or
+`<prefix>.<source>.1`, ... with several sources). After two comment lines,
+each line holds a point: its depth (km), distance and azimuth (degrees), its
+latitude and longitude, and the up, away and transverse components, away
+being along the great circle from the source and transverse 90 degrees
+anticlockwise from it, seen from above.
+
+The cost grows with the numbers of depths and distances, while further
+azimuths cost almost nothing: around the source only orders |m| <= 2 are
+excited, so each depth and distance needs five sums over degree, which any
+number of azimuths then share. The values at each time are summed directly
+from the spectra, and agree with the samples of seismograms at the same
+points to rounding error. The example above, at degrees to 300 and up to 15
+mHz, takes about 9 s on 4 threads, nearly all of it in the radial
+integrations through the mantle.
 
 ## Accuracy and speed
 
@@ -161,7 +231,12 @@ afterwards, through the weights of the jumps and the angular functions.
   functions come from the generalised Legendre functions of GSHTrans, which
   are regular at both poles.
 - **Time series** (`src/TimeSeries.cpp`, `src/Synthetics.cpp`). Spectra
-  are filtered, transformed with FFTW, undamped, and rotated to north and east.
+  are rotated to north and east, passed through any instrument, filtered,
+  transformed with FFTW and undamped.
+- **Snapshots** (`src/Snapshots.cpp`). The coefficients of each degree and
+  order are gathered at each frequency, summed over degree at each depth and
+  distance a block of distances at a time, and summed over frequency directly
+  at each time.
 
 The calculation is threaded over frequency, with a loop over degree inside
 each thread. The library's public headers, in `YSpec/`, use only the standard
@@ -195,12 +270,17 @@ const auto z = seismograms.Trace(0, 0, YSpec::Vertical);
 
 Sources and receivers may be at any depths in one solid region of the model
 (below an ocean, for instance, and above the core). The radial integrations
-are shared by all of them: several sources, or receivers at several depths
-beneath the same places, as for a snapshot of the wavefield, cost little more
-than one. `YSpec::Run("input.json")` does what the `yspec` program does: it
-reads an input file, computes the seismograms and writes them.
-`YSpec::RadialSolver` gives the responses to unit jumps at a set of source
-radii, at a set of receiver radii, for one degree and frequency.
+are shared by all of them: several sources, or receivers at several depths,
+cost little more than one. A receiver may carry an `Instrument`, read from a
+SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
+gives lines of receivers along great circles.
+
+`YSpec::ComputeSnapshots` gives the wavefield on a `YSpec::SnapshotGrid` at
+chosen times. `YSpec::RunSeismograms("input.json")` and
+`YSpec::RunSnapshots("snapshot.json")` do what the programs do: read an input
+file, compute what it describes and write it. `YSpec::RadialSolver` gives the
+responses to unit jumps at a set of source radii, at a set of receiver radii,
+for one degree and frequency.
 
 ## Differences from the Fortran YSpec
 

@@ -7,6 +7,8 @@
  * @details Everything is in SI units: frequencies in Hz, times in seconds.
  */
 
+#include <cstddef>
+#include <functional>
 #include <optional>
 
 namespace YSpec {
@@ -83,5 +85,11 @@ struct Calculation {
   std::optional<Taper> taper;  ///< A taper applied to the spectra, if any.
   SolverOptions solver = {};   ///< Settings of the radial integrations.
 };
+
+/**
+ * @brief Called as frequencies are completed, with the number done and the
+ * number in all; called from one thread at a time.
+ */
+using Progress = std::function<void(std::size_t, std::size_t)>;
 
 }  // namespace YSpec

@@ -16,7 +16,8 @@ enum Component { Vertical = 0, North = 1, East = 2 };
 
 /**
  * @brief Seismograms for a set of sources and receivers, in SI units of the
- * quantity recorded.
+ * quantity recorded or, at a receiver with an instrument, in the units of its
+ * output.
  *
  * @details Sample @f$i@f$ is at time @f$i\,\Delta t@f$ after the origin time.
  * Each trace is contiguous.
