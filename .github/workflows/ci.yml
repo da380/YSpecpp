@@ -65,5 +65,5 @@ jobs:
       - name: Check formatting
         run: |
           clang-format-18 --dry-run --Werror \
-            YSpec/*.hpp app/*.cpp tests/*.cpp tests/regression/*.cpp \
-            examples/*.cpp
+            YSpec/*.hpp src/*.hpp src/*.cpp app/*.cpp tests/*.cpp \
+            tests/regression/*.cpp examples/*.cpp

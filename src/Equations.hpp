@@ -36,24 +36,17 @@
  * used.
  */
 
+#include <YSpec/Model.hpp>
+#include <YSpec/Units.hpp>
 #include <array>
 #include <cmath>
 #include <complex>
 #include <numbers>
 
 #include "Bessel.hpp"
-#include "Model.hpp"
 #include "RungeKutta.hpp"
-#include "Units.hpp"
 
 namespace YSpec {
-
-/** @brief How gravity enters the equations. */
-enum class Gravity {
-  None,     ///< No gravity at all.
-  Cowling,  ///< The equilibrium gravity, but no perturbation of the potential.
-  Full,     ///< Full self-gravitation.
-};
 
 /**
  * @brief The material at a radius at complex frequency: the moduli made
@@ -130,17 +123,21 @@ class Context {
 
   /** @brief A real material made complex at this frequency. */
   ComplexMaterial Complexify(const Material& m, double r) const {
-    const auto d = dispersion_;
+    // Each modulus M becomes M (1 + q D), with q its inverse quality factor
+    // and D the dispersion.
+    auto at = [this](double modulus, double q) {
+      return modulus * (1.0 + q * dispersion_);
+    };
     return {.r = r,
             .rho = m.rho,
             .g = m.g,
-            .A = m.A * (1.0 + m.qA * d),
-            .C = m.C * (1.0 + m.qA * d),
-            .F = m.F * (1.0 + m.qF * d),
-            .L = m.L * (1.0 + m.qMu * d),
-            .N = m.N * (1.0 + m.qMu * d),
-            .kappa = m.kappa * (1.0 + m.qKappa * d),
-            .mu = m.mu * (1.0 + m.qMu * d)};
+            .A = at(m.A, m.qA),
+            .C = at(m.C, m.qA),
+            .F = at(m.F, m.qF),
+            .L = at(m.L, m.qMu),
+            .N = at(m.N, m.qMu),
+            .kappa = at(m.kappa, m.qKappa),
+            .mu = at(m.mu, m.qMu)};
   }
 
  private:
@@ -202,10 +199,10 @@ struct Block6 {
 
 /** @brief The toroidal system. */
 inline Block2 ToroidalBlock(const Context& c, const ComplexMaterial& m) {
-  const auto ri = 1 / m.r;
-  return {.t = 2 * ri,
+  const auto r = m.r;
+  return {.t = 2 / r,
           .k = 1.0 / m.L,
-          .s = -c.Omega2() * m.rho + ri * ri * (c.Zeta2() - 2) * m.N};
+          .s = -c.Omega2() * m.rho + (c.Zeta2() - 2) * m.N / (r * r)};
 }
 
 /**
@@ -215,40 +212,43 @@ inline Block2 ToroidalBlock(const Context& c, const ComplexMaterial& m) {
  */
 inline Block2 RadialBlock(const Context& c, const ComplexMaterial& m,
                           bool gravity) {
-  const auto ri = 1 / m.r;
-  const auto cInverse = 1.0 / m.C;
-  const auto gamma = m.A - m.N - m.F * m.F * cInverse;
+  const auto r = m.r;
+  const auto fOverC = m.F / m.C;
+  // A - N - F^2/C, the modulus of the horizontal stress once the vertical
+  // stress is eliminated.
+  const auto lateral = m.A - m.N - m.F * fOverC;
   const auto g = gravity ? m.g : 0.0;
-  return {.t = (1.0 - 2.0 * m.F * cInverse) * ri,
-          .k = cInverse,
-          .s = -c.Omega2() * m.rho + 4.0 * (gamma - m.rho * g * m.r) * ri * ri};
+  return {.t = (1.0 - 2.0 * fOverC) / r,
+          .k = 1.0 / m.C,
+          .s = -c.Omega2() * m.rho + 4.0 * (lateral - m.rho * g * r) / (r * r)};
 }
 
 /** @brief The spheroidal system in a solid, with full self-gravitation. */
 inline Block6 SolidBlock6(const Context& c, const ComplexMaterial& m) {
-  const auto ri = 1 / m.r;
+  const auto r = m.r;
+  const auto l = static_cast<double>(c.Degree());
   const auto zeta = c.Zeta();
   const auto zeta2 = c.Zeta2();
-  const auto l = static_cast<double>(c.Degree());
-  const auto cInverse = 1.0 / m.C;
-  const auto gamma = m.A - m.N - m.F * m.F * cInverse;
+  const auto omega2 = c.Omega2();
   const auto rho = m.rho;
-  const auto gg = m.g;
+  const auto g = m.g;
+  const auto fOverC = m.F / m.C;
+  const auto lateral = m.A - m.N - m.F * fOverC;
   return {
-      .t11 = (1.0 - 2.0 * m.F * cInverse) * ri,
-      .t12 = zeta * ri * m.F * cInverse,
-      .t21 = -zeta * ri,
-      .t22 = 2 * ri,
+      .t11 = (1.0 - 2.0 * fOverC) / r,
+      .t12 = zeta * fOverC / r,
+      .t21 = -zeta / r,
+      .t22 = 2 / r,
       .t31 = -4 * PiG * rho,
-      .t33 = -l * ri,
-      .k11 = cInverse,
+      .t33 = -l / r,
+      .k11 = 1.0 / m.C,
       .k22 = 1.0 / m.L,
       .k33 = 4 * PiG,
-      .s11 = -c.Omega2() * rho + 4.0 * (gamma - rho * gg * m.r) * ri * ri,
-      .s12 = zeta * (rho * gg * m.r - 2.0 * gamma) * ri * ri,
-      .s13 = -rho * (l + 1) * ri,
-      .s22 = -c.Omega2() * rho + (zeta2 * (gamma + m.N) - 2.0 * m.N) * ri * ri,
-      .s23 = rho * zeta * ri};
+      .s11 = -omega2 * rho + 4.0 * (lateral - rho * g * r) / (r * r),
+      .s12 = zeta * (rho * g * r - 2.0 * lateral) / (r * r),
+      .s13 = -rho * (l + 1) / r,
+      .s22 = -omega2 * rho + (zeta2 * (lateral + m.N) - 2.0 * m.N) / (r * r),
+      .s23 = rho * zeta / r};
 }
 
 /**
@@ -257,43 +257,46 @@ inline Block6 SolidBlock6(const Context& c, const ComplexMaterial& m) {
  */
 inline Block4 SolidBlock4(const Context& c, const ComplexMaterial& m,
                           bool cowling) {
-  const auto ri = 1 / m.r;
+  const auto r = m.r;
   const auto zeta = c.Zeta();
   const auto zeta2 = c.Zeta2();
-  const auto cInverse = 1.0 / m.C;
-  const auto gamma = m.A - m.N - m.F * m.F * cInverse;
+  const auto omega2 = c.Omega2();
   const auto rho = m.rho;
-  const auto rg = cowling ? rho * m.g * m.r : 0.0;
+  const auto fOverC = m.F / m.C;
+  const auto lateral = m.A - m.N - m.F * fOverC;
+  // The weight term, rho g r, which only the Cowling approximation keeps.
+  const auto weight = cowling ? rho * m.g * r : 0.0;
   return {
-      .t11 = (1.0 - 2.0 * m.F * cInverse) * ri,
-      .t12 = zeta * ri * m.F * cInverse,
-      .t21 = -zeta * ri,
-      .t22 = 2 * ri,
-      .k11 = cInverse,
+      .t11 = (1.0 - 2.0 * fOverC) / r,
+      .t12 = zeta * fOverC / r,
+      .t21 = -zeta / r,
+      .t22 = 2 / r,
+      .k11 = 1.0 / m.C,
       .k22 = 1.0 / m.L,
-      .s11 = -c.Omega2() * rho + 4.0 * (gamma - rg) * ri * ri,
-      .s12 = zeta * (rg - 2.0 * gamma) * ri * ri,
-      .s22 = -c.Omega2() * rho + (zeta2 * (gamma + m.N) - 2.0 * m.N) * ri * ri};
+      .s11 = -omega2 * rho + 4.0 * (lateral - weight) / (r * r),
+      .s12 = zeta * (weight - 2.0 * lateral) / (r * r),
+      .s22 = -omega2 * rho + (zeta2 * (lateral + m.N) - 2.0 * m.N) / (r * r)};
 }
 
 /** @brief The spheroidal system in a fluid, with full self-gravitation. */
 inline Block4 FluidBlock4(const Context& c, const ComplexMaterial& m) {
-  const auto ri = 1 / m.r;
-  const auto zeta2 = c.Zeta2();
+  const auto r = m.r;
   const auto l = static_cast<double>(c.Degree());
-  const auto wi2 = c.OmegaInverse2();
+  const auto omega2 = c.Omega2();
   const auto rho = m.rho;
-  const auto gg = m.g;
-  return {
-      .t11 = (gg * zeta2 * wi2 * ri - 1.0) * ri,
-      .t12 = zeta2 * wi2 * ri * ri,
-      .t21 = -4 * PiG * rho,
-      .t22 = -l * ri,
-      .k11 = 1.0 / m.C - zeta2 * wi2 * ri * ri / rho,
-      .k22 = 4 * PiG,
-      .s11 = -c.Omega2() * rho + rho * gg * (gg * zeta2 * ri * wi2 - 4.0) * ri,
-      .s12 = rho * (gg * zeta2 * ri * wi2 - (l + 1)) * ri,
-      .s22 = rho * zeta2 * ri * ri * wi2};
+  const auto g = m.g;
+  // l(l+1) / (omega^2 r): in a fluid the tangential displacement follows from
+  // the pressure, and enters only through this.
+  const auto tangential = c.Zeta2() * c.OmegaInverse2() / r;
+  return {.t11 = (g * tangential - 1.0) / r,
+          .t12 = tangential / r,
+          .t21 = -4 * PiG * rho,
+          .t22 = -l / r,
+          .k11 = 1.0 / m.C - tangential / (r * rho),
+          .k22 = 4 * PiG,
+          .s11 = -omega2 * rho + rho * g * (g * tangential - 4.0) / r,
+          .s12 = rho * (g * tangential - (l + 1)) / r,
+          .s22 = rho * tangential / r};
 }
 
 /**
@@ -302,15 +305,13 @@ inline Block4 FluidBlock4(const Context& c, const ComplexMaterial& m) {
  */
 inline Block2 FluidBlock2(const Context& c, const ComplexMaterial& m,
                           bool cowling) {
-  const auto ri = 1 / m.r;
-  const auto zeta2 = c.Zeta2();
-  const auto wi2 = c.OmegaInverse2();
+  const auto r = m.r;
   const auto rho = m.rho;
-  const auto gg = cowling ? m.g : 0.0;
-  return {
-      .t = (gg * zeta2 * wi2 * ri - 1.0) * ri,
-      .k = 1.0 / m.C - zeta2 * wi2 * ri * ri / rho,
-      .s = -c.Omega2() * rho + rho * gg * (gg * zeta2 * ri * wi2 - 4.0) * ri};
+  const auto g = cowling ? m.g : 0.0;
+  const auto tangential = c.Zeta2() * c.OmegaInverse2() / r;
+  return {.t = (g * tangential - 1.0) / r,
+          .k = 1.0 / m.C - tangential / (r * rho),
+          .s = -c.Omega2() * rho + rho * g * (g * tangential - 4.0) / r};
 }
 
 //----------------------------------------------------------------------------
@@ -318,13 +319,18 @@ inline Block2 FluidBlock2(const Context& c, const ComplexMaterial& m,
 //----------------------------------------------------------------------------
 
 /** @brief The derivative of the solution of a 2x2 system. */
-inline Vector<2> Derivative(const Block2& c, const Vector<2>& y) {
-  return {c.t * y[0] + c.k * y[1], c.s * y[0] - c.t * y[1]};
+inline Vector<2> Derivative(const Block2& block, const Vector<2>& y) {
+  return {block.t * y[0] + block.k * y[1], block.s * y[0] - block.t * y[1]};
 }
 
-/** @brief The derivative of the second-order minors of a 4x4 system. */
-inline Vector<5> MinorDerivative(const Block4& c, const Vector<5>& m) {
-  const auto& [t11, t12, t21, t22, k11, k22, s11, s12, s22] = c;
+/**
+ * @brief The derivative of the second-order minors of a 4x4 system.
+ * @param block The entries of the coefficient matrix.
+ * @param m The minors.
+ */
+inline Vector<5> MinorDerivative(const Block4& block, const Vector<5>& m) {
+  const auto& [t11, t12, t21, t22, k11, k22, s11, s12, s22] = block;
+  // Sums and differences of the diagonal entries of T.
   const auto a11 = t11 + t22;
   const auto a22 = t11 - t22;
   auto dmdr = Vector<5>{};
@@ -336,11 +342,15 @@ inline Vector<5> MinorDerivative(const Block4& c, const Vector<5>& m) {
   return dmdr;
 }
 
-/** @brief The derivative of the reduced third-order minors of the 6x6 system.
+/**
+ * @brief The derivative of the reduced third-order minors of the 6x6 system.
+ * @param block The entries of the coefficient matrix.
+ * @param m The minors.
  */
-inline Vector<14> MinorDerivative(const Block6& c, const Vector<14>& m) {
+inline Vector<14> MinorDerivative(const Block6& block, const Vector<14>& m) {
   const auto& [t11, t12, t21, t22, t31, t33, k11, k22, k33, s11, s12, s13, s22,
-               s23] = c;
+               s23] = block;
+  // Signed sums of the diagonal entries of T.
   const auto a123 = t11 + t22 + t33;
   const auto a126 = t11 + t22 - t33;
   const auto a135 = t11 - t22 + t33;
@@ -374,8 +384,8 @@ inline Vector<14> MinorDerivative(const Block6& c, const Vector<14>& m) {
 }
 
 /** @brief The derivative of the b-vector of a 4x4 system. */
-inline Vector<4> BDerivative(const Block4& c, const Vector<4>& b) {
-  const auto& [t11, t12, t21, t22, k11, k22, s11, s12, s22] = c;
+inline Vector<4> BDerivative(const Block4& block, const Vector<4>& b) {
+  const auto& [t11, t12, t21, t22, k11, k22, s11, s12, s22] = block;
   auto dbdr = Vector<4>{};
   dbdr[0] = -s11 * b[2] - s12 * b[3] - t11 * b[0] - t21 * b[1];
   dbdr[1] = -s12 * b[2] - s22 * b[3] - t12 * b[0] - t22 * b[1];
@@ -385,9 +395,9 @@ inline Vector<4> BDerivative(const Block4& c, const Vector<4>& b) {
 }
 
 /** @brief The derivative of the b-vector of the 6x6 system. */
-inline Vector<14> BDerivative(const Block6& c, const Vector<14>& b) {
+inline Vector<14> BDerivative(const Block6& block, const Vector<14>& b) {
   const auto& [t11, t12, t21, t22, t31, t33, k11, k22, k33, s11, s12, s13, s22,
-               s23] = c;
+               s23] = block;
   auto dbdr = Vector<14>{};
   dbdr[0] = s11 * b[6] + s12 * (b[7] - b[2]) + s13 * b[8] - s22 * b[3] -
             s23 * b[4] - (t11 + t22) * b[0] + t31 * b[5];
@@ -461,27 +471,39 @@ inline Vector<14> Minors(const Vector<6>& y1, const Vector<6>& y2,
 // Starting solutions: those regular at the centre of a homogeneous sphere.
 //----------------------------------------------------------------------------
 
+// In each, ratio is the ratio of spherical Bessel functions
+// x j_{l+1}(x) / j_l(x) at x = k r, for the wavenumber k of the solution.
+
 /** @brief The toroidal starting solution. */
 inline Vector<2> ToroidalStart(const Context& c, const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto r = m.r;
-  const auto q = BesselRatio(c.Degree(), c.Omega2() * m.rho * r * r / m.mu);
-  return {c.Zeta() * r, c.Zeta() * m.mu * ((l - 1) - q)};
+  const auto kr2 = c.Omega2() * m.rho * r * r / m.mu;
+  const auto ratio = BesselRatio(c.Degree(), kr2);
+  return {c.Zeta() * r, c.Zeta() * m.mu * ((l - 1) - ratio)};
 }
 
 /** @brief The radial starting solution, with or without gravity. */
 inline Vector<2> RadialStart(const Context& c, const ComplexMaterial& m,
                              bool gravity) {
   const auto r = m.r;
-  const auto modulus = m.kappa + 4.0 * m.mu / 3.0;
+  const auto pModulus = m.kappa + 4.0 * m.mu / 3.0;
+  // Gravity adds 16 pi G rho / 3 to omega^2.
   const auto shift = gravity ? 16 * PiG * m.rho / 3 : 0.0;
-  const auto gamma = m.rho * (c.Omega2() + shift) / modulus;
-  const auto q = BesselRatio(0, gamma * r * r);
-  return {q, r * modulus * gamma - 4.0 * m.mu * q / r};
+  const auto k2 = m.rho * (c.Omega2() + shift) / pModulus;
+  const auto ratio = BesselRatio(0, k2 * r * r);
+  return {ratio, r * pModulus * k2 - 4.0 * m.mu * ratio / r};
 }
 
-/** @brief The minors of the spheroidal starting solutions in a solid, with
- * full self-gravitation. */
+/**
+ * @brief The minors of the spheroidal starting solutions in a solid, with
+ * full self-gravitation.
+ *
+ * @details The three solutions of a homogeneous self-gravitating sphere
+ * regular at its centre (Takeuchi & Saito 1972): two with wavenumbers that
+ * solve a quadratic in @f$k^2@f$, gravity coupling the P and S waves, and one
+ * without spatial oscillation. @c f and @c h are theirs.
+ */
 inline Vector<14> SolidStart6(const Context& c, const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto zeta = c.Zeta();
@@ -491,28 +513,28 @@ inline Vector<14> SolidStart6(const Context& c, const ComplexMaterial& m) {
   const auto rho = m.rho;
   const auto alpha2 = (m.kappa + 4.0 * m.mu / 3.0) / rho;
   const auto beta2 = m.mu / rho;
-  const auto tmp1 = omega2 / beta2;
-  const auto tmp2 = (omega2 + 16 * PiG * rho / 3) / alpha2;
-  const auto tmp3 = std::pow(8 * PiG * zeta * rho / 3, 2) / (alpha2 * beta2);
+  const auto kS2 = omega2 / beta2;
+  const auto kP2 = (omega2 + 16 * PiG * rho / 3) / alpha2;
+  const auto coupling =
+      std::pow(8 * PiG * zeta * rho / 3, 2) / (alpha2 * beta2);
 
   auto y = std::array<Vector<6>, 3>{};
   for (auto i : {0, 1}) {
     const auto sign = i == 0 ? 1.0 : -1.0;
-    const auto gamma =
-        0.5 * (tmp1 + tmp2) +
-        0.5 * sign * std::sqrt((tmp1 - tmp2) * (tmp1 - tmp2) + tmp3);
-    const auto zt = 0.75 * beta2 * (gamma - tmp1) / (PiG * rho);
-    const auto xi = zt - (l + 1);
-    const auto q = BesselRatio(c.Degree(), gamma * r * r);
-    y[i][0] = l * xi - zt * q;
-    y[i][1] = zeta * (xi + q);
-    y[i][2] = -4 * PiG * rho * r * zt;
-    y[i][3] = -rho * alpha2 * zt * r * gamma +
-              2.0 * m.mu * l * (l - 1) * xi / r +
-              2.0 * m.mu * (2.0 * zt + zeta2) * q / r;
+    const auto k2 =
+        0.5 * (kS2 + kP2) +
+        0.5 * sign * std::sqrt((kS2 - kP2) * (kS2 - kP2) + coupling);
+    const auto f = 0.75 * beta2 * (k2 - kS2) / (PiG * rho);
+    const auto h = f - (l + 1);
+    const auto ratio = BesselRatio(c.Degree(), k2 * r * r);
+    y[i][0] = l * h - f * ratio;
+    y[i][1] = zeta * (h + ratio);
+    y[i][2] = -4 * PiG * rho * r * f;
+    y[i][3] = -rho * alpha2 * f * r * k2 + 2.0 * m.mu * l * (l - 1) * h / r +
+              2.0 * m.mu * (2.0 * f + zeta2) * ratio / r;
     y[i][4] = m.mu * zeta *
-              (r * gamma + 2.0 * (l - 1) * xi / r - 2.0 * (zt + 1.0) * q / r);
-    y[i][5] = -rho * (zeta2 + (l + 1) * zt);
+              (r * k2 + 2.0 * (l - 1) * h / r - 2.0 * (f + 1.0) * ratio / r);
+    y[i][5] = -rho * (zeta2 + (l + 1) * f);
   }
   y[2][0] = l;
   y[2][1] = zeta;
@@ -524,8 +546,11 @@ inline Vector<14> SolidStart6(const Context& c, const ComplexMaterial& m) {
   return Minors(y[0], y[1], y[2]);
 }
 
-/** @brief The minors of the spheroidal starting solutions in a solid, without
- * gravity (used in the Cowling approximation too). */
+/**
+ * @brief The minors of the spheroidal starting solutions in a solid, without
+ * gravity (used in the Cowling approximation too): a P and an S solution
+ * (Takeuchi & Saito 1972).
+ */
 inline Vector<5> SolidStart4(const Context& c, const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto zeta = c.Zeta();
@@ -534,31 +559,32 @@ inline Vector<5> SolidStart4(const Context& c, const ComplexMaterial& m) {
   const auto rho = m.rho;
   const auto alpha2 = (m.kappa + 4.0 * m.mu / 3.0) / rho;
   const auto beta2 = m.mu / rho;
-  auto y1 = Vector<4>{};
-  auto y2 = Vector<4>{};
+  auto p = Vector<4>{};
   {
-    // With z = (kr)^2 for the P wavenumber.
-    const auto z = omega2 * r * r / alpha2;
-    const auto q = BesselRatio(c.Degree(), z);
-    y1[0] = l - q;
-    y1[1] = zeta;
-    y1[2] = (-rho * alpha2 * z + 2.0 * m.mu * (l * (l - 1) + 2.0 * q)) / r;
-    y1[3] = 2.0 * zeta * m.mu * ((l - 1) - q) / r;
+    const auto kr2 = omega2 * r * r / alpha2;
+    const auto ratio = BesselRatio(c.Degree(), kr2);
+    p[0] = l - ratio;
+    p[1] = zeta;
+    p[2] = (-rho * alpha2 * kr2 + 2.0 * m.mu * (l * (l - 1) + 2.0 * ratio)) / r;
+    p[3] = 2.0 * zeta * m.mu * ((l - 1) - ratio) / r;
   }
+  auto s = Vector<4>{};
   {
-    // With z = (kr)^2 for the S wavenumber.
-    const auto z = omega2 * r * r / beta2;
-    const auto q = BesselRatio(c.Degree(), z);
-    y2[0] = -l * (l + 1);
-    y2[1] = -zeta * (l + 1) + q;
-    y2[2] = -2.0 * m.mu * (l * (l * l - 1) - l * (l + 1) * q) / r;
-    y2[3] = zeta * m.mu * (z - 2.0 * (l * l - 1) - 2.0 * q) / r;
+    const auto kr2 = omega2 * r * r / beta2;
+    const auto ratio = BesselRatio(c.Degree(), kr2);
+    s[0] = -l * (l + 1);
+    s[1] = -zeta * (l + 1) + ratio;
+    s[2] = -2.0 * m.mu * (l * (l * l - 1) - l * (l + 1) * ratio) / r;
+    s[3] = zeta * m.mu * (kr2 - 2.0 * (l * l - 1) - 2.0 * ratio) / r;
   }
-  return Minors(y1, y2);
+  return Minors(p, s);
 }
 
-/** @brief The minors of the spheroidal starting solutions in a fluid, with
- * full self-gravitation. */
+/**
+ * @brief The minors of the spheroidal starting solutions in a fluid, with
+ * full self-gravitation (Takeuchi & Saito 1972, whose @c gamma, @c f and
+ * @c h these are).
+ */
 inline Vector<5> FluidStart4(const Context& c, const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto zeta2 = c.Zeta2();
@@ -566,30 +592,32 @@ inline Vector<5> FluidStart4(const Context& c, const ComplexMaterial& m) {
   const auto r = m.r;
   const auto rho = m.rho;
   const auto alpha2 = m.kappa / rho;
-  const auto gamg = 4 * PiG * rho / 3;
-  const auto gamma =
-      (omega2 + 4 * gamg - zeta2 * gamg * gamg * c.OmegaInverse2()) / alpha2;
-  const auto zt = -omega2 / gamg;
-  const auto xi = zt - (l + 1);
-  const auto q = BesselRatio(c.Degree(), gamma * r * r);
-  const auto y1 =
-      Vector<4>{l * xi - zt * q, -4 * PiG * rho * r * zt,
-                -rho * alpha2 * zt * r * gamma, -rho * (zeta2 + (l + 1) * zt)};
-  const auto y2 = Vector<4>{
+  const auto gamma = 4 * PiG * rho / 3;
+  const auto k2 =
+      (omega2 + 4 * gamma - zeta2 * gamma * gamma * c.OmegaInverse2()) / alpha2;
+  const auto f = -omega2 / gamma;
+  const auto h = f - (l + 1);
+  const auto ratio = BesselRatio(c.Degree(), k2 * r * r);
+  const auto oscillating =
+      Vector<4>{l * h - f * ratio, -4 * PiG * rho * r * f,
+                -rho * alpha2 * f * r * k2, -rho * (zeta2 + (l + 1) * f)};
+  const auto steady = Vector<4>{
       l, (omega2 - 4 * PiG * rho * l / 3) * r, 0.0,
       0.25 * ((2 * l + 1) * omega2 - 8 * PiG * l * (l - 1) * rho / 3) / PiG};
-  return Minors(y1, y2);
+  return Minors(oscillating, steady);
 }
 
-/** @brief The spheroidal starting solution in a fluid, without gravity (used
- * in the Cowling approximation too). */
+/**
+ * @brief The spheroidal starting solution in a fluid, without gravity (used
+ * in the Cowling approximation too).
+ */
 inline Vector<2> FluidStart2(const Context& c, const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto r = m.r;
   const auto alpha2 = m.kappa / m.rho;
-  const auto z = c.Omega2() * r * r / alpha2;
-  const auto q = BesselRatio(c.Degree(), z);
-  return {l - q, -m.rho * alpha2 * z / r};
+  const auto kr2 = c.Omega2() * r * r / alpha2;
+  const auto ratio = BesselRatio(c.Degree(), kr2);
+  return {l - ratio, -m.rho * alpha2 * kr2 / r};
 }
 
 //----------------------------------------------------------------------------
@@ -598,53 +626,63 @@ inline Vector<2> FluidStart2(const Context& c, const ComplexMaterial& m) {
 //----------------------------------------------------------------------------
 
 /** @brief Third-order minors in a solid to second-order minors in a fluid. */
-inline Vector<5> SolidToFluid(const Vector<14>& m1) {
-  return {-m1[5], -m1[6], m1[8], -m1[12], m1[13]};
+inline Vector<5> SolidToFluid(const Vector<14>& solid) {
+  return {-solid[5], -solid[6], solid[8], -solid[12], solid[13]};
 }
 
 /** @brief Second-order minors in a solid to the fluid solution (no gravity or
  * Cowling). */
-inline Vector<2> SolidToFluid(const Vector<5>& m1) { return {-m1[2], -m1[4]}; }
+inline Vector<2> SolidToFluid(const Vector<5>& solid) {
+  return {-solid[2], -solid[4]};
+}
 
 /** @brief Second-order minors in a fluid to third-order minors in a solid. */
-inline Vector<14> FluidToSolid(const Vector<5>& m1) {
-  auto m2 = Vector<14>{};
-  m2[0] = m1[0];
-  m2[1] = m1[1];
-  m2[3] = m1[2];
-  m2[9] = -m1[3];
-  m2[11] = -m1[4];
-  return m2;
+inline Vector<14> FluidToSolid(const Vector<5>& fluid) {
+  auto solid = Vector<14>{};
+  solid[0] = fluid[0];
+  solid[1] = fluid[1];
+  solid[3] = fluid[2];
+  solid[9] = -fluid[3];
+  solid[11] = -fluid[4];
+  return solid;
 }
 
 /** @brief The fluid solution to second-order minors in a solid (no gravity or
  * Cowling). */
-inline Vector<5> FluidToSolid(const Vector<2>& m1) {
-  auto m2 = Vector<5>{};
-  m2[0] = m1[0];
-  m2[3] = -m1[1];
-  return m2;
+inline Vector<5> FluidToSolid(const Vector<2>& fluid) {
+  auto solid = Vector<5>{};
+  solid[0] = fluid[0];
+  solid[3] = -fluid[1];
+  return solid;
 }
 
 /** @brief The secular determinant from minors integrated from below and from
  * above (4x4 systems). */
-inline Complex SecularDeterminant(const Vector<5>& m1, const Vector<5>& m2) {
-  return m1[4] * m2[0] + 2.0 * m1[1] * m2[1] + m1[3] * m2[2] + m1[2] * m2[3] +
-         m1[0] * m2[4];
+inline Complex SecularDeterminant(const Vector<5>& below,
+                                  const Vector<5>& above) {
+  return below[4] * above[0] + 2.0 * below[1] * above[1] + below[3] * above[2] +
+         below[2] * above[3] + below[0] * above[4];
 }
 
 /** @brief The secular determinant from minors integrated from below and from
  * above (6x6 system). */
-inline Complex SecularDeterminant(const Vector<14>& m1, const Vector<14>& m2) {
-  return -m1[13] * m2[0] + 2.0 * m1[6] * m2[1] + 2.0 * m1[10] * m2[2] +
-         m1[12] * m2[3] + 2.0 * m1[7] * m2[4] + m1[11] * m2[5] -
-         2.0 * m1[1] * m2[6] - 2.0 * m1[4] * m2[7] - m1[9] * m2[8] +
-         m1[8] * m2[9] - 2.0 * m1[2] * m2[10] - m1[5] * m2[11] -
-         m1[3] * m2[12] + m1[0] * m2[13];
+inline Complex SecularDeterminant(const Vector<14>& below,
+                                  const Vector<14>& above) {
+  return -below[13] * above[0] + 2.0 * below[6] * above[1] +
+         2.0 * below[10] * above[2] + below[12] * above[3] +
+         2.0 * below[7] * above[4] + below[11] * above[5] -
+         2.0 * below[1] * above[6] - 2.0 * below[4] * above[7] -
+         below[9] * above[8] + below[8] * above[9] -
+         2.0 * below[2] * above[10] - below[5] * above[11] -
+         below[3] * above[12] + below[0] * above[13];
 }
 
-/** @brief The starting b-vector at the source from the minors and a jump (4x4
- * systems). */
+/**
+ * @brief The starting b-vector at the source from the minors and a jump (4x4
+ * systems).
+ * @param m The minors at the source, from below or from above.
+ * @param s The jump in the solution at the source.
+ */
 inline Vector<4> BStart(const Vector<5>& m, const Vector<4>& s) {
   return {-m[4] * s[1] - m[1] * s[2] - m[3] * s[3],
           m[4] * s[0] - m[2] * s[2] + m[1] * s[3],
@@ -652,8 +690,12 @@ inline Vector<4> BStart(const Vector<5>& m, const Vector<4>& s) {
           m[3] * s[0] - m[1] * s[1] + m[0] * s[2]};
 }
 
-/** @brief The starting b-vector at the source from the minors and a jump (6x6
- * system). */
+/**
+ * @brief The starting b-vector at the source from the minors and a jump (6x6
+ * system).
+ * @param m The minors at the source, from below or from above.
+ * @param s The jump in the solution at the source.
+ */
 inline Vector<14> BStart(const Vector<14>& m, const Vector<6>& s) {
   auto b = Vector<14>{};
   b[0] = m[13] * s[2] - m[6] * s[3] - m[10] * s[4] - m[12] * s[5];
@@ -673,7 +715,11 @@ inline Vector<14> BStart(const Vector<14>& m, const Vector<6>& s) {
   return b;
 }
 
-/** @brief The solution from the minors and the b-vector (4x4 systems). */
+/**
+ * @brief The solution from the minors and the b-vector (4x4 systems).
+ * @param m The minors, integrated from the side away from the source.
+ * @param b The b-vector, integrated from the source.
+ */
 inline Vector<4> Solution(const Vector<5>& m, const Vector<4>& b) {
   return {m[0] * b[1] + m[1] * b[2] + m[2] * b[3],
           -m[0] * b[0] + m[3] * b[2] - m[1] * b[3],
@@ -681,7 +727,11 @@ inline Vector<4> Solution(const Vector<5>& m, const Vector<4>& b) {
           -m[2] * b[0] + m[1] * b[1] - m[4] * b[2]};
 }
 
-/** @brief The solution from the minors and the b-vector (6x6 system). */
+/**
+ * @brief The solution from the minors and the b-vector (6x6 system).
+ * @param m The minors, integrated from the side away from the source.
+ * @param b The b-vector, integrated from the source.
+ */
 inline Vector<6> Solution(const Vector<14>& m, const Vector<14>& b) {
   auto y = Vector<6>{};
   y[0] = m[2] * b[2] + m[0] * b[5] + m[1] * b[6] + 2.0 * m[2] * b[7] +

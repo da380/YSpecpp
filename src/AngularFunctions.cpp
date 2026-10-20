@@ -1,0 +1,46 @@
+#include "AngularFunctions.hpp"
+
+#include <GSHTrans/Wigner.hpp>
+#include <algorithm>
+#include <cmath>
+#include <ranges>
+
+namespace YSpec {
+
+AngularFunctions::AngularFunctions(int lMax, std::vector<double> theta)
+    : lMax_{lMax}, count_{std::ssize(theta)} {
+  values_.assign(static_cast<std::size_t>(count_) * (lMax + 1) * 5, {});
+  // GSHTrans refuses a double table above a degree at which a recursion for
+  // high orders would underflow; long double reaches far higher.
+  if (lMax <= GSHTrans::MaxSafeDegree<double>()) {
+    Fill<double>(theta);
+  } else {
+    Fill<long double>(theta);
+  }
+}
+
+template <class Real>
+void AngularFunctions::Fill(const std::vector<double>& theta) {
+  using Table =
+      GSHTrans::Wigner<Real, GSHTrans::All, GSHTrans::All, GSHTrans::Multiple>;
+  const auto nMax = lMax_ >= 1 ? 1 : 0;
+  const auto angles = std::vector<Real>(theta.begin(), theta.end());
+  const auto wigner = Table(lMax_, 2, nMax, angles);
+  for (auto i : std::views::iota(Int{0}, count_)) {
+    for (auto l : std::views::iota(0, lMax_ + 1)) {
+      const auto zeta = std::sqrt(static_cast<double>(l) * (l + 1));
+      const auto mMax = std::min(l, 2);
+      for (auto m : std::views::iota(-mMax, mMax + 1)) {
+        auto& functions = Value(i, l, m);
+        functions.value = static_cast<double>(wigner[0, i][l][m]);
+        if (l == 0) continue;
+        const auto minus = static_cast<double>(wigner[-1, i][l][m]);
+        const auto plus = static_cast<double>(wigner[1, i][l][m]);
+        functions.dTheta = zeta / 2 * (minus - plus);
+        functions.mOverSin = -zeta / 2 * (plus + minus);
+      }
+    }
+  }
+}
+
+}  // namespace YSpec

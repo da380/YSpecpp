@@ -23,6 +23,7 @@
  * which is how the original YSpec integrates.
  */
 
+#include <YSpec/Types.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -35,9 +36,6 @@
 #include <stdexcept>
 
 namespace YSpec {
-
-/// The complex type of the solutions.
-using Complex = std::complex<double>;
 
 /** @brief The state of a system of N complex equations. */
 template <std::size_t N>
@@ -360,10 +358,10 @@ class RungeKutta {
 
     if (!options_.adaptive) {
       // Equal steps, as many as needed to keep each below the suggestion.
-      const auto n = static_cast<std::size_t>(std::abs(length) / step) + 1;
-      const auto h = length / static_cast<double>(n);
+      const auto steps = static_cast<std::size_t>(std::abs(length) / step) + 1;
+      const auto h = length / static_cast<double>(steps);
       auto k0 = f(r0, y);
-      for (auto i : std::views::iota(std::size_t{0}, n)) {
+      for (auto i : std::views::iota(std::size_t{0}, steps)) {
         const auto r = r0 + static_cast<double>(i) * h;
         auto error = State{};
         Step(f, r, h, y, k0, error);
@@ -426,11 +424,11 @@ class RungeKutta {
   }
 
   // Takes one step of length h from r, replacing y by the higher-order
-  // solution and setting e to the error estimate. k0 is f(r, y). Returns the
-  // last stage.
+  // solution and setting error to the error estimate. k0 is f(r, y). Returns
+  // the last stage.
   template <class State, class F>
   static State Step(F& f, double r, double h, State& y, const State& k0,
-                    State& e) {
+                    State& error) {
     using RungeKuttaDetails::AddScaled;
     constexpr auto S = Tableau::Stages;
     auto k = std::array<State, S>{};
@@ -443,10 +441,10 @@ class RungeKutta {
       }
       k[s] = f(r + Tableau::c[s] * h, ys);
     }
-    e = State{};
+    error = State{};
     for (auto s = std::size_t{0}; s < S; ++s) {
       if (Tableau::b[s] != 0) AddScaled(y, h * Tableau::b[s], k[s]);
-      if (Tableau::e[s] != 0) AddScaled(e, h * Tableau::e[s], k[s]);
+      if (Tableau::e[s] != 0) AddScaled(error, h * Tableau::e[s], k[s]);
     }
     return k[S - 1];
   }

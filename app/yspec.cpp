@@ -3,18 +3,13 @@
 //   yspec input.json
 //
 // Reads the calculation from a JSON file (see YSpec/Input.hpp for its
-// members) and writes one file per receiver, <prefix>.1, <prefix>.2, ..., in
-// the order the receivers are listed. Each line of a file holds the time
-// after the origin (s) and the vertical (up), north and east components, in
-// SI units of the quantity asked for.
+// members), computes it and writes the seismograms (see YSpec/Run.hpp for the
+// files), reporting progress on the standard error.
 
-#include <YSpec/Input.hpp>
-#include <YSpec/Synthetics.hpp>
+#include <YSpec/YSpec.hpp>
 #include <chrono>
-#include <cstdio>
 #include <exception>
 #include <format>
-#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -24,60 +19,50 @@
 
 namespace {
 
-void Write(const YSpec::Seismograms& seismograms,
-           const std::filesystem::path& prefix) {
-  for (auto k = std::size_t{0}; k < seismograms.Receivers(); ++k) {
-    auto path = prefix;
-    path += std::format(".{}", k + 1);
-    auto file = std::ofstream(path);
-    if (!file) throw std::runtime_error("cannot write " + path.string());
-    for (auto i = std::size_t{0}; i < seismograms.Samples(); ++i) {
-      file << std::format("{:15.6E}{:15.6E}{:15.6E}{:15.6E}\n",
-                          static_cast<double>(i) * seismograms.TimeStep(),
-                          seismograms(k, 0, i), seismograms(k, 1, i),
-                          seismograms(k, 2, i));
-    }
-  }
+const auto kUsage =
+    "usage: yspec input.json\n"
+    "\n"
+    "Computes synthetic seismograms for the calculation described in\n"
+    "input.json (see README.md) and writes one file per receiver,\n"
+    "<prefix>.1, <prefix>.2, ... (<prefix>.<source>.1, ... for several\n"
+    "sources), each line holding the time (s) and the vertical, north and\n"
+    "east components in SI units. The number of threads is set by\n"
+    "OMP_NUM_THREADS.\n";
+
+std::string Plural(std::size_t n, const char* noun) {
+  return std::format("{} {}{}", n, noun, n == 1 ? "" : "s");
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  const auto usage =
-      "usage: yspec input.json\n"
-      "\n"
-      "Computes synthetic seismograms for the calculation described in\n"
-      "input.json (see README.md) and writes one file per receiver,\n"
-      "<prefix>.1, <prefix>.2, ..., each line holding the time (s) and the\n"
-      "vertical, north and east components in SI units. The number of\n"
-      "threads is set by OMP_NUM_THREADS.\n";
-  if (argc == 2 &&
-      (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
-    std::cout << usage;
+  const auto argument = argc == 2 ? std::string(argv[1]) : std::string{};
+  if (argument == "--help" || argument == "-h") {
+    std::cout << kUsage;
     return 0;
   }
-  if (argc == 2 && std::string(argv[1]) == "--version") {
+  if (argument == "--version") {
     std::cout << "yspec " << YSPEC_VERSION << "\n";
     return 0;
   }
   if (argc != 2) {
-    std::cerr << usage;
+    std::cerr << kUsage;
     return 2;
   }
   try {
     const auto start = std::chrono::steady_clock::now();
-    const auto input = YSpec::ReadInput(argv[1]);
-    const auto model = YSpec::Model::ReadDeck(input.model);
-    const auto& s = input.settings;
-    auto threads = 1;
+    const auto input = YSpec::ReadInput(argument);
+    const auto& calculation = input.calculation;
+    auto threads = std::size_t{1};
 #ifdef _OPENMP
-    threads = omp_get_max_threads();
+    threads = static_cast<std::size_t>(omp_get_max_threads());
 #endif
     std::cerr << std::format(
-        "yspec: model {}, degrees {} to {}, {} to {} mHz, {} receivers, {} "
-        "thread{}\n",
-        input.model.string(), s.lMin, s.lMax, s.fMin, s.fMax,
-        s.receivers.size(), threads, threads == 1 ? "" : "s");
+        "yspec: model {}, degrees {} to {}, {} to {} mHz, {}, {}, {}\n",
+        input.model.string(), calculation.degrees.min, calculation.degrees.max,
+        calculation.band.min * 1e3, calculation.band.max * 1e3,
+        Plural(input.sources.size(), "source"),
+        Plural(input.receivers.size(), "receiver"), Plural(threads, "thread"));
 
     auto reported = 0;
     auto progress = [&reported](std::size_t done, std::size_t total) {
@@ -88,15 +73,16 @@ int main(int argc, char** argv) {
                                  total);
       }
     };
-    const auto seismograms = YSpec::ComputeSeismograms(model, s, progress);
-    Write(seismograms, input.prefix);
+    const auto seismograms = YSpec::Compute(input, progress);
+    YSpec::WriteSeismograms(seismograms, input);
 
     const auto seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
             .count();
-    std::cerr << std::format("yspec: wrote {}.1 to {}.{} in {:.2f} s\n",
-                             input.prefix.string(), input.prefix.string(),
-                             seismograms.Receivers(), seconds);
+    std::cerr << std::format(
+        "yspec: wrote {} with prefix {} in {:.2f} s\n",
+        Plural(seismograms.Sources() * seismograms.Receivers(), "file"),
+        input.prefix.string(), seconds);
   } catch (const std::exception& e) {
     std::cerr << "yspec: " << e.what() << "\n";
     return 1;

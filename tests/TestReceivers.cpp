@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <YSpec/Receivers.hpp>
 #include <cmath>
 #include <numbers>
 #include <vector>
+
+#include "AngularFunctions.hpp"
+#include "Geometry.hpp"
 
 namespace {
 
@@ -55,10 +57,10 @@ TEST(AngularFunctions, AgreeWithTheStandardLibrary) {
         };
         const auto& a = angular(i, l, m);
         const auto scale = std::sqrt((2.0 * l + 1) / (4 * pi));
-        EXPECT_NEAR(a.x, X(t), 1e-12 * scale) << l << " " << m;
+        EXPECT_NEAR(a.value, X(t), 1e-12 * scale) << l << " " << m;
         const auto dx = (X(t + h) - X(t - h)) / (2 * h);
-        EXPECT_NEAR(a.dx, dx, 1e-6 * scale * (l + 1)) << l << " " << m;
-        EXPECT_NEAR(a.mx, m * X(t) / std::sin(t), 1e-11 * scale * (l + 1))
+        EXPECT_NEAR(a.dTheta, dx, 1e-6 * scale * (l + 1)) << l << " " << m;
+        EXPECT_NEAR(a.mOverSin, m * X(t) / std::sin(t), 1e-11 * scale * (l + 1))
             << l << " " << m;
       }
     }
@@ -76,7 +78,7 @@ TEST(AngularFunctions, ReachBeyondTheLimitOfADoubleTable) {
         const auto sign = (m < 0 && m % 2 != 0) ? -1.0 : 1.0;
         const auto expected =
             sign * std::sph_legendre(l, std::abs(m), theta[i]);
-        EXPECT_NEAR(angular(i, l, m).x, expected,
+        EXPECT_NEAR(angular(i, l, m).value, expected,
                     1e-10 * std::sqrt((2.0 * l + 1) / (4 * pi)))
             << l << " " << m;
       }
@@ -89,15 +91,15 @@ TEST(AngularFunctions, AreRegularAtThePoles) {
   for (auto i : {0, 1}) {
     for (auto l = 1; l <= 10; ++l) {
       // Only m = 0 survives at a pole, and m = +-1 in the derivatives.
-      EXPECT_NEAR(angular(i, l, 2).x, 0, 1e-13);
-      EXPECT_NEAR(angular(i, l, 2).mx, 0, 1e-13);
-      EXPECT_TRUE(std::isfinite(angular(i, l, 1).mx));
+      EXPECT_NEAR(angular(i, l, 2).value, 0, 1e-13);
+      EXPECT_NEAR(angular(i, l, 2).mOverSin, 0, 1e-13);
+      EXPECT_TRUE(std::isfinite(angular(i, l, 1).mOverSin));
       // At the north pole m X / sin(theta) -> -dX/dtheta for m = 1 ... in
       // magnitude both equal sqrt((2l+1)/4pi) sqrt(l(l+1))/2.
       const auto expected =
           std::sqrt((2.0 * l + 1) / (4 * pi)) * std::sqrt(l * (l + 1.0)) / 2;
-      EXPECT_NEAR(std::abs(angular(i, l, 1).mx), expected, 1e-12);
-      EXPECT_NEAR(std::abs(angular(i, l, 1).dx), expected, 1e-12);
+      EXPECT_NEAR(std::abs(angular(i, l, 1).mOverSin), expected, 1e-12);
+      EXPECT_NEAR(std::abs(angular(i, l, 1).dTheta), expected, 1e-12);
     }
   }
 }

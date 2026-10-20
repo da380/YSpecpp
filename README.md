@@ -46,8 +46,10 @@ build/bin/yspec examples/input.json
 
 The number of threads is set with `OMP_NUM_THREADS`. One file is written per
 receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the receivers are
-listed. Each line holds the time after the origin time (s) and the vertical
-(up), north and east components, in SI units of the quantity asked for.
+listed; with several sources, one per source and receiver,
+`<prefix>.<source>.1`, .... Each line holds the time after the origin time (s)
+and the vertical (up), north and east components, in SI units of the quantity
+asked for.
 
 ### Input
 
@@ -67,11 +69,11 @@ The calculation is read from a JSON file:
   "frequencies_mHz": { "min": 0.2, "max": 40 },
   "time_series": { "length_min": 60, "time_step_s": 1.0 },
   "filter_mHz": [1.0, 5.0, 38, 40],
-  "source": {
-    "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
-    "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
-                          "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 }
-  },
+  "sources": [
+    { "name": "event", "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
+      "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
+                            "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 } }
+  ],
   "receivers": { "depth_km": 3, "locations": [[0, 4], [0, 6], [0, 8]] },
   "solver": { "tolerance": 1e-5 }
 }
@@ -92,12 +94,15 @@ The calculation is read from a JSON file:
   highest frequency.
 - `filter_mHz`: an optional raised-cosine taper, rising from zero to one
   between its first two corners and falling back between its last two.
-- `source`: the hypocentre (geographic latitude) and the moment tensor in
-  spherical coordinates at the source (r up, theta south, phi east), for a
-  step in moment at the origin time.
-- `receivers`: their depth (all receivers are at one depth) and locations as
-  `[latitude, longitude]` pairs. The source and the receivers must lie in the
-  same solid region of the model: in `prem.200`, below its 3 km ocean.
+- `sources`: one or more, each with its hypocentre (geographic latitude) and
+  its moment tensor in spherical coordinates at the source (r up, theta south,
+  phi east), for a step in moment at the origin time. Sources at one depth
+  share the radial solves, so extra ones cost little. The optional `name`
+  labels the output files when there are several sources (by default the
+  sources are numbered from 1).
+- `receivers`: their depth and locations as `[latitude, longitude]` pairs.
+  The sources and the receivers must lie in the same solid region of the
+  model: in `prem.200`, below its 3 km ocean.
 - `solver.tolerance`: the local error allowed per integration step, relative
   to the size of the solution (default `1e-5`; see below), and
   `solver.start_decay`, the decay in e-folds below a turning point at which an
@@ -130,55 +135,72 @@ radius. The source is rotated to the north pole, where only orders |m| ≤ 2
 are excited; the moment tensor and the receivers enter only
 afterwards, through the weights of the jumps and the angular functions.
 
-- **Model** (`YSpec/Model.hpp`). The deck is read with planetmodel and made
-  non-dimensional. Each property is a natural cubic spline within each layer,
-  and gravity is the exact integral of the density spline.
-- **Equations** (`YSpec/Equations.hpp`). Toroidal and radial systems are
+- **Model** (`YSpec/Model.hpp`, `src/Model.cpp`). The deck is read with
+  planetmodel and made non-dimensional. Each property is a natural cubic
+  spline within each layer, and gravity is the exact integral of the density
+  spline.
+- **Equations** (`src/Equations.hpp`). Toroidal and radial systems are
   2x2. Spheroidal systems are 4x4 without self-gravitation and 6x6 with it,
   integrated as minor vectors (second-order minors of the 4x4 systems, the
   fourteen independent third-order minors of the 6x6), with the source carried
   to the receiver by the b-vector system. Solid and fluid regions have their
   own forms, joined at every boundary between them.
-- **Solver** (`YSpec/Solver.hpp`). One spheroidal solver serves all three
-  treatments of gravity and any sequence of regions. Integration starts where
-  a WKB estimate says the solution has decayed by e^-11 below its turning
-  point, from starting values for a homogeneous sphere.
-- **Integration** (`YSpec/RungeKutta.hpp`). A Dormand-Prince 5(4) method
+- **Solver** (`YSpec/RadialSolver.hpp`, `src/RadialSolver.cpp`). One
+  two-point solver serves the toroidal, radial and spheroidal systems, all
+  three treatments of gravity and any sequence of regions. The integrations
+  from below and from above are shared by every source and receiver depth:
+  each is kept as it passes them, and each source then needs only its own
+  determinant and the b-vectors carried out to the receivers. Integration
+  starts where a WKB estimate says the solution has decayed by e^-11 below its
+  turning point, from starting values for a homogeneous sphere.
+- **Integration** (`src/RungeKutta.hpp`). A Dormand-Prince 5(4) method
   with step-size control, restarted at every discontinuity. Solutions are
   carried with a running logarithmic scale, since they grow and decay by far
   more than a double can hold.
-- **Receivers** (`YSpec/Receivers.hpp`). The angular functions come from the
-  generalised Legendre functions of GSHTrans, which are regular at both poles.
-- **Time series** (`YSpec/TimeSeries.hpp`, `YSpec/Synthetics.hpp`). Spectra
+- **Receivers** (`src/Geometry.hpp`, `src/AngularFunctions.cpp`). The angular
+  functions come from the generalised Legendre functions of GSHTrans, which
+  are regular at both poles.
+- **Time series** (`src/TimeSeries.cpp`, `src/Synthetics.cpp`). Spectra
   are filtered, transformed with FFTW, undamped, and rotated to north and east.
 
 The calculation is threaded over frequency, with a loop over degree inside
-each thread.
+each thread. The library's public headers, in `YSpec/`, use only the standard
+library; the numerics and the libraries they build on are in `src/`.
 
 ## Using it as a library
 
-The library is header-only; link the CMake target `YSpec::YSpec`.
+Link the CMake target `YSpec::YSpec`. The public headers in `YSpec/` use only
+the standard library, and the library works in SI units.
 
 ```cpp
-#include <YSpec/Synthetics.hpp>
+#include <YSpec/YSpec.hpp>
 
-auto model = YSpec::Model::ReadDeck("prem.200");
-auto settings = YSpec::Settings{};
-settings.lMax = 200;
-settings.fMin = 0.2;               // mHz
-settings.fMax = 15;
-settings.length = 60;              // minutes
-settings.timeStep = 20;            // seconds
-settings.sourceDepth = 29.5;       // km
-settings.receiverDepth = 3;        // km: the sea floor of prem.200
-settings.moment = {.rr = 1e18};    // N m
-settings.receivers = {{0, 30}, {0, 60}};
-auto seismograms = YSpec::ComputeSeismograms(model, settings);
-double z = seismograms(0, 0, 100);  // receiver 0, vertical, sample 100
+const auto model = YSpec::Model::ReadDeck("prem.200");
+
+auto calculation = YSpec::Calculation{};
+calculation.degrees = {.min = 0, .max = 200};
+calculation.band = {.min = 0.2e-3, .max = 15e-3};           // Hz
+calculation.sampling = {.duration = 3600, .timeStep = 20};  // s
+
+const auto sources = std::vector<YSpec::Source>{
+    {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e18}}};
+const auto receivers = std::vector<YSpec::Receiver>{
+    {.location = {0, 30}, .depth = 3e3}, {.location = {0, 60}, .depth = 3e3}};
+
+const auto seismograms =
+    YSpec::ComputeSeismograms(model, calculation, sources, receivers);
+// The vertical component from the first source at the first receiver.
+const auto z = seismograms.Trace(0, 0, YSpec::Vertical);
 ```
 
-`YSpec::RadialSolver` gives the response to unit jumps for a single degree and
-frequency.
+Sources and receivers may be at any depths in one solid region of the model
+(below an ocean, for instance, and above the core). The radial integrations
+are shared by all of them: several sources, or receivers at several depths
+beneath the same places, as for a snapshot of the wavefield, cost little more
+than one. `YSpec::Run("input.json")` does what the `yspec` program does: it
+reads an input file, computes the seismograms and writes them.
+`YSpec::RadialSolver` gives the responses to unit jumps at a set of source
+radii, at a set of receiver radii, for one degree and frequency.
 
 ## Differences from the Fortran YSpec
 

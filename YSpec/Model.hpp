@@ -19,28 +19,20 @@
  * form only between regions, where solid meets fluid.
  */
 
-#include <Interpolation/CubicSplineSystem.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
-#include <format>
-#include <numbers>
-#include <planetmodel/deck.hpp>
 #include <ranges>
 #include <span>
-#include <stdexcept>
-#include <string>
-#include <utility>
+#include <string_view>
 #include <vector>
 
+#include "Types.hpp"
 #include "Units.hpp"
 
 namespace YSpec {
-
-/// The signed index type, as in GSHTrans.
-using Int = std::ptrdiff_t;
 
 /** @brief Whether a layer can support shear. */
 enum class Phase { Solid, Fluid };
@@ -78,81 +70,60 @@ struct Material {
   auto Beta() const { return std::sqrt(mu / rho); }
 };
 
-namespace ModelDetails {
+/** @brief The properties a layer splines: those of Material less gravity. */
+enum class Property : std::size_t {
+  Rho,
+  A,
+  C,
+  F,
+  L,
+  N,
+  Kappa,
+  Mu,
+  QKappa,
+  QMu,
+  QA,
+  QF,
+  Count
+};
 
-/// The number of splined properties: Material less gravity.
-inline constexpr auto NumberOfFields = std::size_t{12};
-using Fields = std::array<double, NumberOfFields>;
+/** @brief A value for each splined property, indexed by Property. */
+class Properties {
+ public:
+  /** @brief The value of a property. */
+  double& operator[](Property p) {
+    return values_[static_cast<std::size_t>(p)];
+  }
+  /** @brief The value of a property. */
+  double operator[](Property p) const {
+    return values_[static_cast<std::size_t>(p)];
+  }
+  /** @brief The values, in the order of Property. */
+  auto& Values() { return values_; }
+  /** @brief The values, in the order of Property. */
+  const auto& Values() const { return values_; }
 
-inline Material MakeMaterial(const Fields& f, double g) {
-  return {.rho = f[0],
-          .A = f[1],
-          .C = f[2],
-          .F = f[3],
-          .L = f[4],
-          .N = f[5],
-          .kappa = f[6],
-          .mu = f[7],
-          .qKappa = f[8],
-          .qMu = f[9],
-          .qA = f[10],
-          .qF = f[11],
-          .g = g};
-}
-
-}  // namespace ModelDetails
+ private:
+  std::array<double, static_cast<std::size_t>(Property::Count)> values_{};
+};
 
 /**
  * @brief One layer of the model: the region between two discontinuities.
  */
 class Layer {
  public:
-  /// The splined properties at a knot, in Material's order less gravity.
-  using Fields = ModelDetails::Fields;
-
   /**
-   * @brief Builds a layer from its knots and the values of each property.
+   * @brief Builds a layer from its knots and the properties at each.
    * @param radii The knots, strictly increasing, at least two.
-   * @param values For each knot, the properties in Material's order, less
-   * gravity.
+   * @param values The properties at each knot.
    * @param phase Whether the layer is solid or fluid.
    * @param massBelow The integral of @f$\rho r^2@f$ from the centre to the
    * layer's lower radius.
+   * @throws std::invalid_argument for fewer than two knots or a value
+   * missing.
    */
-  Layer(std::vector<double> radii, const std::vector<Fields>& values,
-        Phase phase, double massBelow)
-      : r_{std::move(radii)}, phase_{phase} {
-    if (r_.size() < 2 || values.size() != r_.size()) {
-      throw std::invalid_argument(
-          "Layer: need at least two knots, with a value at each");
-    }
-    const auto n = r_.size();
-    auto system = Interpolation::CubicSplineSystem{std::views::all(r_)};
-    auto y = std::vector<double>(n);
-    auto curvature = std::vector<double>(n);
-    coefficients_.assign(n - 1, {});
-    for (auto f : std::views::iota(std::size_t{0}, Fields{}.size())) {
-      std::ranges::transform(values, y.begin(),
-                             [f](const auto& v) { return v[f]; });
-      system.Solve(y, std::span{curvature});
-      for (auto k : std::views::iota(std::size_t{0}, n - 1)) {
-        const auto h = r_[k + 1] - r_[k];
-        auto& c = coefficients_[k];
-        c[0][f] = y[k];
-        c[1][f] = (y[k + 1] - y[k]) / h -
-                  h * (2 * curvature[k] + curvature[k + 1]) / 6;
-        c[2][f] = curvature[k] / 2;
-        c[3][f] = (curvature[k + 1] - curvature[k]) / (6 * h);
-      }
-    }
-    // The mass below each knot, from the exact integral of the density.
-    massBelow_.reserve(n);
-    massBelow_.push_back(massBelow);
-    for (auto k : std::views::iota(std::size_t{0}, n - 1)) {
-      massBelow_.push_back(massBelow_.back() +
-                           MassInSegment(k, r_[k + 1] - r_[k]));
-    }
-  }
+  Layer(std::vector<double> radii, const std::vector<Properties>& values,
+        Phase phase, double massBelow);
 
   /** @brief The lower radius. */
   auto Lower() const { return r_.front(); }
@@ -171,17 +142,33 @@ class Layer {
    * @brief The properties at a radius.
    * @details A radius outside the layer is given the value of the end cubic
    * continued, which is what an integration step overshooting the layer by
-   * rounding needs.
+   * rounding needs. Evaluated for every step of every integration, so it is
+   * defined here, to be inlined.
    */
   Material operator()(double r) const {
     const auto k = Segment(r);
     const auto t = r - r_[k];
     const auto& c = coefficients_[k];
-    auto f = Fields{};
-    for (auto i : std::views::iota(std::size_t{0}, f.size())) {
-      f[i] = ((c[3][i] * t + c[2][i]) * t + c[1][i]) * t + c[0][i];
+    auto p = Properties{};
+    for (auto i : std::views::iota(std::size_t{0}, p.Values().size())) {
+      p.Values()[i] =
+          ((c[3].Values()[i] * t + c[2].Values()[i]) * t + c[1].Values()[i]) *
+              t +
+          c[0].Values()[i];
     }
-    return ModelDetails::MakeMaterial(f, Gravity(k, t, r));
+    return {.rho = p[Property::Rho],
+            .A = p[Property::A],
+            .C = p[Property::C],
+            .F = p[Property::F],
+            .L = p[Property::L],
+            .N = p[Property::N],
+            .kappa = p[Property::Kappa],
+            .mu = p[Property::Mu],
+            .qKappa = p[Property::QKappa],
+            .qMu = p[Property::QMu],
+            .qA = p[Property::QA],
+            .qF = p[Property::QF],
+            .g = Gravity(k, t, r)};
   }
 
   /** @brief The gravitational acceleration at a radius. */
@@ -191,9 +178,9 @@ class Layer {
   }
 
  private:
-  // Per segment, the four coefficients of the cubic in the distance from the
-  // segment's lower knot, for each property.
-  using Cubic = std::array<Fields, 4>;
+  // Per segment, the coefficients of the cubic in the distance from the
+  // segment's lower knot, constant term first, for each property.
+  using Cubic = std::array<Properties, 4>;
 
   std::vector<double> r_;
   Phase phase_;
@@ -215,7 +202,7 @@ class Layer {
     auto sum = 0.0;
     auto tPower = t;  // t^(i+1)
     for (auto i : std::views::iota(0, 4)) {
-      const auto a = c[i][0];
+      const auto a = c[i][Property::Rho];
       sum += a * (r0 * r0 * tPower / (i + 1) + 2 * r0 * tPower * t / (i + 2) +
                   tPower * t * t / (i + 3));
       tPower *= t;
@@ -251,94 +238,23 @@ struct Region {
 class Model {
  public:
   /**
-   * @brief Reads a model in the deck format of Minos.
+   * @brief Reads a model in the deck format of Minos (six or nine columns,
+   * SI units).
    * @param path The deck.
    * @param scales The scales with which to make it non-dimensional.
-   * @throws planetmodel::Error if the deck cannot be read, and
+   * @throws std::runtime_error if the deck cannot be read, and
    * std::invalid_argument if it does not describe a usable model.
    */
   static Model ReadDeck(const std::filesystem::path& path,
-                        Scales scales = Scales{}) {
-    const auto deck = planetmodel::ReadDeck(path, planetmodel::MINEOS());
-    const auto header =
-        planetmodel::ReadMineosHeader(deck.Header(), deck.Source());
-    return Model(deck, header.tref, scales);
-  }
+                        Scales scales = Scales{});
 
   /**
-   * @brief Builds the model from a deck already read.
-   * @param deck The deck, in SI units, in either the six or the nine column
-   * format.
-   * @param referencePeriod The period in seconds at which the deck's
-   * velocities apply.
+   * @brief Reads a model from the text of a deck.
+   * @param text The deck.
    * @param scales The scales with which to make it non-dimensional.
+   * @throws as ReadDeck.
    */
-  Model(const planetmodel::Deck& deck, double referencePeriod, Scales scales)
-      : scales_{scales},
-        referenceFrequency_{2 * std::numbers::pi / referencePeriod /
-                            scales.Frequency()} {
-    const auto anisotropic = deck.HasColumn("vpv");
-    const auto& radius = deck.Radius();
-    const auto& rho = deck.Column("rho");
-    const auto& vpv = deck.Column(anisotropic ? "vpv" : "vp");
-    const auto& vsv = deck.Column(anisotropic ? "vsv" : "vs");
-    const auto& vph = deck.Column(anisotropic ? "vph" : "vp");
-    const auto& vsh = deck.Column(anisotropic ? "vsh" : "vs");
-    const auto& qKappa = deck.Column("qkappa");
-    const auto& qMu = deck.Column("qmu");
-
-    const auto velocity = scales.Velocity();
-    auto inverse = [](double q) { return q > 0 ? 1 / q : 0.0; };
-    auto massBelow = 0.0;
-    for (auto [begin, end] : deck.Layers()) {
-      auto r = std::vector<double>{};
-      auto values = std::vector<Layer::Fields>{};
-      auto shear = 0.0;
-      for (auto i : std::views::iota(begin, end)) {
-        const auto density = rho[i] / scales.Density();
-        auto modulus = [&](double v) {
-          const auto u = v / velocity;
-          return density * u * u;
-        };
-        const auto A = modulus(vph[i]);
-        const auto C = modulus(vpv[i]);
-        const auto L = modulus(vsv[i]);
-        const auto N = modulus(vsh[i]);
-        const auto eta = anisotropic ? deck.Column("eta")[i] : 1.0;
-        const auto F = eta * (A - 2 * L);
-        const auto kappa = (C + 4 * A - 4 * N + 4 * F) / 9;
-        const auto mu = (C + A + 6 * L + 5 * N - 2 * F) / 15;
-        const auto qk = inverse(qKappa[i]);
-        const auto qm = inverse(qMu[i]);
-        // Minos's effective inverse quality factors for A, C and F.
-        const auto ratio = 4 * mu / (3 * kappa + 4 * mu);
-        const auto qA = (1 - ratio) * qk + ratio * qm;
-        const auto qF = ((1 - ratio) * qk - ratio * qm / 2) / (1 - 1.5 * ratio);
-        r.push_back(radius[i] / scales.Length());
-        values.push_back({density, A, C, F, L, N, kappa, mu, qk, qm, qA, qF});
-        shear = std::max({shear, L, N});
-      }
-      const auto phase = shear > 0 ? Phase::Solid : Phase::Fluid;
-      layers_.emplace_back(std::move(r), values, phase, massBelow);
-      massBelow = layers_.back().MassBelowTop();
-    }
-    if (layers_.empty()) throw std::invalid_argument("Model: empty deck");
-
-    // Group the layers into regions of one phase.
-    for (auto i : std::views::iota(Int{0}, std::ssize(layers_))) {
-      const auto& layer = layers_[i];
-      if (regions_.empty() || regions_.back().phase != layer.GetPhase()) {
-        regions_.push_back({.first = i,
-                            .last = i,
-                            .phase = layer.GetPhase(),
-                            .lower = layer.Lower(),
-                            .upper = layer.Upper()});
-      } else {
-        regions_.back().last = i;
-        regions_.back().upper = layer.Upper();
-      }
-    }
-  }
+  static Model ReadDeckText(std::string_view text, Scales scales = Scales{});
 
   /** @brief The scales with which the model was made non-dimensional. */
   const Scales& GetScales() const { return scales_; }
@@ -367,26 +283,23 @@ class Model {
    * @param side At a discontinuity, which of the two layers to return.
    * @throws std::out_of_range if the radius is outside the model.
    */
-  Int LayerIndex(double r, Side side = Side::Below) const {
-    if (r < InnerRadius() || r > SurfaceRadius()) {
-      throw std::out_of_range(std::format("radius {} is outside the model", r));
-    }
-    auto it = side == Side::Below
-                  ? std::ranges::lower_bound(layers_, r, {}, &Layer::Upper)
-                  : std::ranges::upper_bound(layers_, r, {}, &Layer::Upper);
-    if (it == layers_.end()) --it;
-    return std::distance(layers_.begin(), it);
-  }
+  Int LayerIndex(double r, Side side = Side::Below) const;
 
   /** @brief The index of the region containing a layer. */
-  Int RegionIndex(Int layer) const {
-    const auto it = std::ranges::find_if(
-        regions_, [layer](const auto& region) { return layer <= region.last; });
-    return std::distance(regions_.begin(), it);
-  }
+  Int RegionIndex(Int layer) const;
 
   /** @brief The properties at a radius, in the layer given. */
   Material operator()(Int layer, double r) const { return layers_[layer](r); }
+
+  /**
+   * @brief Builds a model from its layers.
+   * @param scales The scales with which it was made non-dimensional.
+   * @param referenceFrequency The frequency at which the moduli are given.
+   * @param layers The layers, from the centre, each beginning where the
+   * last ends.
+   * @throws std::invalid_argument if there are no layers.
+   */
+  Model(Scales scales, double referenceFrequency, std::vector<Layer> layers);
 
  private:
   Scales scales_;

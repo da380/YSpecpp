@@ -93,37 +93,57 @@ if(YSPEC_WITH_OPENMP)
   find_package(OpenMP REQUIRED)
 endif()
 
-# The library: headers only.
-add_library(YSpec INTERFACE)
-add_library(YSpec::YSpec ALIAS YSpec)
-target_include_directories(YSpec INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
-target_compile_features(YSpec INTERFACE cxx_std_23)
-target_link_libraries(YSpec INTERFACE
+option(YSPEC_WARNINGS_AS_ERRORS "Treat warnings in our own code as errors" OFF)
+set(YSPEC_WARNINGS -Wall -Wextra)
+if(YSPEC_WARNINGS_AS_ERRORS)
+  list(APPEND YSPEC_WARNINGS -Werror)
+endif()
+
+# What the library is built from but does not show: the numerics and the
+# libraries they use. The tests of the internals link this too.
+add_library(YSpecInternal INTERFACE)
+target_include_directories(YSpecInternal INTERFACE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(YSpecInternal INTERFACE
   NumericConcepts::NumericConcepts
   Interpolation::Interpolation
   FFTWpp::FFTWpp
   GSHTrans::GSHTrans
   planetmodel::planetmodel)
-if(YSPEC_WITH_OPENMP)
-  target_link_libraries(YSpec INTERFACE OpenMP::OpenMP_CXX)
-endif()
 
-option(YSPEC_WARNINGS_AS_ERRORS "Treat warnings in our own code as errors" OFF)
+# The library. Its public headers, in YSpec/, use nothing but the standard
+# library; everything else is private. Static unless BUILD_SHARED_LIBS is on,
+# and position-independent either way so that it can go into a Python module.
+add_library(YSpec
+  src/AngularFunctions.cpp
+  src/Input.cpp
+  src/Model.cpp
+  src/RadialSolver.cpp
+  src/Run.cpp
+  src/Synthetics.cpp
+  src/TimeSeries.cpp)
+add_library(YSpec::YSpec ALIAS YSpec)
+set_target_properties(YSpec PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(YSpec PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+target_compile_features(YSpec PUBLIC cxx_std_23)
+target_link_libraries(YSpec PRIVATE YSpecInternal)
+target_compile_options(YSpec PRIVATE ${YSPEC_WARNINGS})
+if(YSPEC_WITH_OPENMP)
+  target_link_libraries(YSpec PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # The program.
 add_executable(yspec app/yspec.cpp)
 target_link_libraries(yspec PRIVATE YSpec::YSpec)
 target_compile_definitions(yspec PRIVATE YSPEC_VERSION="${PROJECT_VERSION}")
-if(YSPEC_WARNINGS_AS_ERRORS)
-  target_compile_options(yspec PRIVATE -Wall -Wextra -Werror)
-else()
-  target_compile_options(yspec PRIVATE -Wall -Wextra)
+target_compile_options(yspec PRIVATE ${YSPEC_WARNINGS})
+if(YSPEC_WITH_OPENMP)
+  target_link_libraries(yspec PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# Only the program is installed. The library is headers alone and can be used
-# from a checkout; exporting it as a CMake package has to wait until
-# planetmodel, which it links, exports one of its own.
+# Only the program is installed for now; exporting the library as a CMake
+# package has to wait until planetmodel exports one of its own.
 include(GNUInstallDirs)
 install(TARGETS yspec RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 

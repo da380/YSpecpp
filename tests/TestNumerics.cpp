@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <YSpec/Bessel.hpp>
-#include <YSpec/RungeKutta.hpp>
 #include <cmath>
 #include <complex>
 #include <numbers>
+
+#include "Bessel.hpp"
+#include "RungeKutta.hpp"
 
 namespace {
 
