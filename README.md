@@ -7,6 +7,8 @@ Woodhouse 2008). This is a C++23 re-implementation of the original Fortran
 YSpec: the same physics, inputs and outputs, with better numerics and a
 structure that is easier to extend.
 
+Start with the [YSpecpp user guide](docs/site/index.html), including a [first seismogram](docs/site/first-seismogram.html) and a [C++ library example](docs/site/library-example.html).
+
 The earth model may be transversely isotropic and anelastic, with any
 sequence of solid and fluid regions (a fluid or solid inner core, an ocean or
 none). Attenuation is the constant-Q logarithmic dispersion of PREM,
