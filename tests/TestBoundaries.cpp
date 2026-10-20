@@ -7,7 +7,9 @@
 #include <complex>
 #include <map>
 #include <numbers>
+#include <ranges>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -609,6 +611,89 @@ TEST(SolverAcrossBoundaries, GivesTheRadialDerivatives) {
         if (!fluid) {
           near(toroidal(0, 1).DW[j], toroidal(0, 0).W[j], toroidal(0, 2).W[j]);
         }
+      }
+    }
+  }
+}
+
+TEST(SolverAcrossBoundaries, GivesEachSideOfADiscontinuity) {
+  // Receivers at a discontinuity, in the layer on each side, against
+  // receivers just inside each: at the core-mantle boundary, between solid
+  // and fluid, and at 670 km, between two solids. Listed in both orders, the
+  // integrations must pass them in the order of travel.
+  const auto model = Model::ReadDeck(kPrem);
+  const auto length = model.GetScales().Length();
+  const auto h = 1e-9;
+  for (auto radius : {3480e3, 5701e3}) {
+    const auto r = radius / length;
+    const auto below = model.LayerIndex(r, Side::Below);
+    const auto above = model.LayerIndex(r, Side::Above);
+    ASSERT_NE(below, above);
+    for (auto reversed : {false, true}) {
+      auto points = std::vector<Point>{
+          {below, r - h}, {below, r}, {above, r}, {above, r + h}};
+      if (reversed) std::ranges::reverse(points);
+      const auto solver =
+          RadialSolver(model, {1 - 30e3 / length}, points, Gravity::Full);
+      auto index = [&](Int layer, double x) {
+        for (auto i = std::size_t{0}; i < points.size(); ++i) {
+          if (points[i].layer == layer && points[i].r == x) return i;
+        }
+        return points.size();
+      };
+      const auto omega = Complex(15, -0.2);
+      const auto spheroidal = solver.Spheroidal(3, omega);
+      const auto toroidal = solver.Toroidal(3, omega);
+      for (auto [layer, x, near] :
+           {std::tuple{below, r, r - h}, std::tuple{above, r, r + h}}) {
+        const auto& at = spheroidal(0, index(layer, x));
+        const auto& by = spheroidal(0, index(layer, near));
+        const auto& atT = toroidal(0, index(layer, x));
+        const auto& byT = toroidal(0, index(layer, near));
+        for (auto j : {0, 1, 2, 3}) {
+          for (auto [a, b] :
+               {std::pair{at.U[j], by.U[j]}, std::pair{at.V[j], by.V[j]},
+                std::pair{at.DU[j], by.DU[j]},
+                std::pair{at.Phi[j], by.Phi[j]}}) {
+            EXPECT_NEAR(std::abs(a - b), 0, 1e-6 * std::abs(b) + 1e-300)
+                << radius / 1e3 << " km, layer " << layer << ", jump " << j;
+          }
+        }
+        for (auto j : {0, 1}) {
+          EXPECT_NEAR(std::abs(atT.W[j] - byT.W[j]), 0,
+                      1e-6 * std::abs(byT.W[j]) + 1e-300);
+        }
+      }
+    }
+  }
+}
+
+TEST(SolverAcrossBoundaries, IsFiniteOnEverySideOfEveryDiscontinuity) {
+  // With receivers on both sides of every discontinuity, the integration
+  // from below may start at one of them, in the layer above: those below it
+  // must be left out, not reached by integrating back across the boundary.
+  const auto model = Model::ReadDeck(kPrem);
+  const auto length = model.GetScales().Length();
+  auto points = std::vector<Point>{};
+  for (auto layer = Int{0}; layer < model.NumberOfLayers(); ++layer) {
+    const auto& here = model.GetLayer(layer);
+    if (here.Lower() > 0) points.push_back({layer, here.Lower()});
+    points.push_back({layer, here.Upper()});
+  }
+  const auto solver =
+      RadialSolver(model, {1 - 30e3 / length}, points, Gravity::Full);
+  for (auto l : {1, 5, 11, 20, 40}) {
+    for (auto f : {1.0, 4.0, 10.0, 25.0}) {
+      const auto omega = Complex(f, -0.05);
+      const auto spheroidal = solver.Spheroidal(l, omega);
+      const auto toroidal = solver.Toroidal(l, omega);
+      for (auto i = std::size_t{0}; i < points.size(); ++i) {
+        for (auto j : {0, 1, 2, 3}) {
+          EXPECT_TRUE(std::isfinite(std::abs(spheroidal(0, i).U[j])) &&
+                      std::isfinite(std::abs(spheroidal(0, i).DU[j])))
+              << "degree " << l << ", frequency " << f << ", point " << i;
+        }
+        EXPECT_TRUE(std::isfinite(std::abs(toroidal(0, i).W[0])));
       }
     }
   }

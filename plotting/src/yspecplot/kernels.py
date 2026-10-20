@@ -9,18 +9,27 @@ from .seismograms import COLOURS
 from .snapshots import GUIDE, STAR, _phase_boundaries
 
 
-def _profile(radius, values, boundaries, name):
+def _profile(radius, values, boundaries, name, lowest):
     """The kernel at its radii as a profile slice, a layer for each span
-    between the deck's boundaries."""
+    between the deck's boundaries, carried out to the boundaries by linear
+    extrapolation from the nodes nearest them, which lie just inside, so
+    that the jumps are drawn at the boundaries themselves."""
     layers = []
     which = np.searchsorted(boundaries, radius)
     for index in np.unique(which):
         inside = which == index
         r = radius[inside]
+        v = values[inside]
+        if len(r) >= 2:
+            lower = max(boundaries[index - 1], lowest) if index > 0 else r[0]
+            upper = boundaries[index] if index < len(boundaries) else r[-1]
+            below = v[0] + (v[1] - v[0]) * (lower - r[0]) / (r[1] - r[0])
+            above = v[-1] + (v[-1] - v[-2]) * (upper - r[-1]) / (r[-1] - r[-2])
+            r = np.concatenate([[lower], r, [upper]])
+            v = np.concatenate([[below], v, [above]])
         points = np.stack([np.zeros_like(r), np.zeros_like(r), r], axis=-1)
-        layers.append(SliceLayer(index=int(index), radius=r,
-                                 values=values[inside], reference=points,
-                                 physical=points))
+        layers.append(SliceLayer(index=int(index), radius=r, values=v,
+                                 reference=points, physical=points))
     return ProfileSlice(theta=None, phi=None, layers=tuple(layers),
                         shown=Shown(name))
 
@@ -31,7 +40,7 @@ def radial_kernels(run, names=None, *, deepest=None):
     point part at the source marked, down to `deepest` km if given."""
     import matplotlib.pyplot as plt
 
-    names = names or run.names
+    names = names or run.parameters
     deck = read_deck(run.model, MINEOS)
     boundaries = deck.boundaries / 1e3
     phase, surface = _phase_boundaries(run.model)
@@ -58,7 +67,7 @@ def radial_kernels(run, names=None, *, deepest=None):
         values = run.kernels[name]
         keep = run.radius >= lowest
         profile(ax, _profile(run.radius[keep], values[keep], boundaries,
-                             name), joiners=False, boundaries=False,
+                             name, lowest), joiners=True, boundaries=False,
                 color="k", lw=0.9)
         for b in boundaries:
             if b >= lowest:
@@ -71,9 +80,10 @@ def radial_kernels(run, names=None, *, deepest=None):
         point = run.at_source[name]
         ax.plot(0, run.source_radius, **STAR)
         if point != 0:
-            ax.annotate(f"P = {point:.2g}", (0, run.source_radius),
-                        xytext=(4, -12), textcoords="offset points",
-                        fontsize=7)
+            ax.annotate(f"P = {point:.2g} s" + ("" if run.relative else
+                                                " per unit"),
+                        (0, run.source_radius), xytext=(4, -12),
+                        textcoords="offset points", fontsize=7)
         largest = np.abs(values[keep]).max()
         ax.set_xlim(-1.1 * largest or -1, 1.1 * largest or 1)
         ax.ticklabel_format(axis="x", style="sci", scilimits=(-2, 3))
@@ -85,5 +95,12 @@ def radial_kernels(run, names=None, *, deepest=None):
             ax.tick_params(labelleft=False)
     axes[0].set_ylabel("radius (km)")
     axes[0].set_ylim(lowest, surface)
-    fig.tight_layout()
+    change = "δ ln X" if run.relative else "δX"
+    fig.text(0.5, 0.005,
+             f"★ the source. P: the point part of a kernel there, from the jump "
+             f"in the displacement across the source's radius; the "
+             f"traveltime changes by the integral of K {change} r² dr, plus "
+             f"P {change} at the source.", ha="center", va="bottom",
+             fontsize=8)
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     return fig

@@ -160,7 +160,7 @@ class Check {
     measurement_ = Traveltime(model_, calculation_, TheSource(), TheReceiver(),
                               direction, window);
     kernels_ = ComputeRadialKernels(model_, calculation_, TheSource(),
-                                    measurement_, {.order = 5});
+                                    measurement_, {.order = 5, .maxElement = 20e3});
   }
 
   // The change predicted by the kernels, and that by central differences.

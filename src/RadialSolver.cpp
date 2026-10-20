@@ -205,7 +205,7 @@ struct Stop {
 class RadialSolver::Impl {
  public:
   Impl(const Model& model, std::vector<double> sourceRadii,
-       std::vector<double> receiverRadii, Gravity gravity, bool attenuation,
+       std::vector<Point> receivers, Gravity gravity, bool attenuation,
        SolverOptions options)
       : model_{&model},
         gravity_{gravity},
@@ -221,7 +221,7 @@ class RadialSolver::Impl {
     if (!(options.stepFactor > 0)) {
       throw std::invalid_argument("the step factor must be positive");
     }
-    if (sourceRadii.empty() || receiverRadii.empty()) {
+    if (sourceRadii.empty() || receivers.empty()) {
       throw std::invalid_argument("there must be a source and a receiver");
     }
     for (auto r : sourceRadii) {
@@ -231,13 +231,22 @@ class RadialSolver::Impl {
       }
       sources_.push_back(SolidSide(model, r));
     }
-    for (auto r : receiverRadii) {
-      if (!(r > 0)) {
+    for (const auto& receiver : receivers) {
+      if (!(receiver.r > 0)) {
         throw std::invalid_argument(
             "a receiver at the centre of the model is not supported");
       }
-      receivers_.push_back(SolidSide(model, r));
+      if (receiver.layer < 0 || receiver.layer >= model.NumberOfLayers()) {
+        throw std::invalid_argument("a receiver is in no layer of the model");
+      }
+      const auto& layer = model.GetLayer(receiver.layer);
+      const auto tolerance = 1e-12 * model.SurfaceRadius();
+      if (receiver.r < layer.Lower() - tolerance ||
+          receiver.r > layer.Upper() + tolerance) {
+        throw std::invalid_argument("a receiver is outside its layer");
+      }
     }
+    receivers_ = std::move(receivers);
 
     region_ = model.RegionIndex(sources_.front().layer);
     for (const auto& source : sources_) {
@@ -258,6 +267,16 @@ class RadialSolver::Impl {
       for (auto r : layer.Knots()) alpha = std::max(alpha, layer(r).Alpha());
       maxAlpha_.push_back(alpha);
     }
+  }
+
+  // At a boundary between solid and fluid, the point on the solid side.
+  static Point SolidSide(const Model& model, double r) {
+    const auto below = model.LayerIndex(r, Side::Below);
+    const auto above = model.LayerIndex(r, Side::Above);
+    if (model.GetLayer(below).IsFluid() && !model.GetLayer(above).IsFluid()) {
+      return {above, r};
+    }
+    return {below, r};
   }
 
   const Model& GetModel() const { return *model_; }
@@ -399,14 +418,6 @@ class RadialSolver::Impl {
   std::vector<double> maxAlpha_;
 
   // A radius in its layer, taking the solid side of a solid-fluid boundary.
-  static Point SolidSide(const Model& model, double r) {
-    const auto below = model.LayerIndex(r, Side::Below);
-    const auto above = model.LayerIndex(r, Side::Above);
-    if (model.GetLayer(below).IsFluid() && !model.GetLayer(above).IsFluid()) {
-      return {above, r};
-    }
-    return {below, r};
-  }
 };
 
 namespace {
@@ -716,9 +727,16 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
       std::array<std::array<Complex, System::Components>, System::Jumps>;
   const auto sourceCount = sources_.size();
   const auto all = All();
-  auto byRadius = [](const Stop& stop) { return stop.point.r; };
-  const auto lowestSource = std::ranges::min(sources_, {}, &Point::r);
-  const auto highestSource = std::ranges::max(sources_, {}, &Point::r);
+  // Points are ordered by radius and, at one radius on either side of a
+  // discontinuity, by layer: the lower layer's is passed first going up, and
+  // the upper's first going down, and one in a lower layer than a start at
+  // its radius is below it.
+  auto place = [](const Point& point) {
+    return std::pair{point.r, point.layer};
+  };
+  auto byRadius = [&](const Stop& stop) { return place(stop.point); };
+  const auto lowestSource = std::ranges::min(sources_, {}, place);
+  const auto highestSource = std::ranges::max(sources_, {}, place);
 
   // The points the system reaches: the responses elsewhere are zero, as they
   // are, to the accuracy of the start, below the level at which the solution
@@ -726,7 +744,7 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
   const auto start = system.StartLevel(lowestSource);
   auto reached = std::vector<Stop>{};
   for (const auto& stop : all) {
-    if (system.Reaches(stop.point) && stop.point.r >= start.r) {
+    if (system.Reaches(stop.point) && place(stop.point) >= place(start)) {
       reached.push_back(stop);
     }
   }
@@ -735,7 +753,7 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
   auto stopsWhere = [&](auto&& keep, bool ascending) {
     auto stops = std::vector<Stop>{};
     for (const auto& stop : reached) {
-      if (keep(stop.point.r)) stops.push_back(stop);
+      if (keep(place(stop.point))) stops.push_back(stop);
     }
     std::ranges::stable_sort(stops, {}, byRadius);
     if (!ascending) std::ranges::reverse(stops);
@@ -751,7 +769,7 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
   auto fromBelow = std::vector<State>(all.size());
   {
     const auto stops =
-        stopsWhere([&](double r) { return r <= highestSource.r; }, true);
+        stopsWhere([&](auto at) { return at <= place(highestSource); }, true);
     auto step = 0.0;
     auto [first, state] = system.FromBelow(start, lowest, step);
     WalkKeeping(
@@ -764,7 +782,7 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
   auto fromAbove = std::vector<State>(all.size());
   {
     const auto stops =
-        stopsWhere([&](double r) { return r >= lowestSource.r; }, false);
+        stopsWhere([&](auto at) { return at >= place(lowestSource); }, false);
     auto step = 0.0;
     auto [top, state] = system.FromAbove();
     WalkKeeping(
@@ -815,7 +833,8 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
         std::vector<Stop>(reached.begin() + sourceCount, reached.end());
     std::ranges::stable_sort(receivers, {}, byRadius);
     const auto split = std::ranges::partition_point(
-        receivers, [&](const Stop& stop) { return stop.point.r < point.r; });
+        receivers,
+        [&](const Stop& stop) { return place(stop.point) < place(point); });
     const auto below =
         std::vector<Stop>(std::make_reverse_iterator(split), receivers.rend());
     spread(std::span{split, receivers.end()}, true);
@@ -831,11 +850,33 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
 //----------------------------------------------------------------------------
 
 RadialSolver::RadialSolver(const Model& model, std::vector<double> sourceRadii,
-                           std::vector<double> receiverRadii, Gravity gravity,
+                           std::vector<Point> receivers, Gravity gravity,
                            bool attenuation, SolverOptions options)
     : impl_{std::make_shared<const Impl>(model, std::move(sourceRadii),
-                                         std::move(receiverRadii), gravity,
+                                         std::move(receivers), gravity,
                                          attenuation, options)} {}
+
+RadialSolver::RadialSolver(const Model& model, std::vector<double> sourceRadii,
+                           std::vector<double> receiverRadii, Gravity gravity,
+                           bool attenuation, SolverOptions options)
+    : RadialSolver(
+          model, std::move(sourceRadii),
+          [&] {
+            auto points = std::vector<Point>{};
+            for (auto r : receiverRadii) {
+              if (!(r > 0)) {
+                throw std::invalid_argument(
+                    "a receiver at the centre of the model is not "
+                    "supported");
+              }
+              if (r > model.SurfaceRadius()) {
+                throw std::invalid_argument("a receiver is outside the model");
+              }
+              points.push_back(Impl::SolidSide(model, r));
+            }
+            return points;
+          }(),
+          gravity, attenuation, options) {}
 
 const Model& RadialSolver::GetModel() const { return impl_->GetModel(); }
 std::size_t RadialSolver::Sources() const { return impl_->Sources().size(); }

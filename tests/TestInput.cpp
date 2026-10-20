@@ -289,21 +289,31 @@ TEST(Input, ReadsForces) {
 
 TEST(Input, ReadsTheKernelExamples) {
   const auto directory = fs::path(YSPEC_EXAMPLES_DIR) / "kernels";
-  const auto s = ReadKernelInput(directory / "s-wave.json");
-  EXPECT_EQ(s.prefix, directory / "s-wave");
+  const auto input = ReadKernelInput(directory / "traveltimes.json");
+  EXPECT_EQ(input.prefix, directory / "traveltimes");
+  ASSERT_EQ(input.measurements.size(), 2u);
+  const auto& s = input.measurements[0];
+  EXPECT_EQ(s.name, "S");
   EXPECT_EQ(s.component, "T");
   EXPECT_DOUBLE_EQ(s.window.start, 1000);
   EXPECT_DOUBLE_EQ(s.window.end, 1200);
   EXPECT_DOUBLE_EQ(s.window.taper, 40);
-  EXPECT_EQ(s.parameters, ParameterSet::Velocities);
-  EXPECT_EQ(s.scaling, Scaling::Relative);
-  EXPECT_EQ(s.calculation.quantity, Quantity::Velocity);
   // The transverse direction is horizontal and of unit length.
   EXPECT_DOUBLE_EQ(s.direction.up, 0);
   EXPECT_NEAR(std::hypot(s.direction.north, s.direction.east), 1, 1e-12);
-  const auto rayleigh = ReadKernelInput(directory / "rayleigh.json");
+  const auto& rayleigh = input.measurements[1];
+  EXPECT_EQ(rayleigh.name, "Rayleigh");
   EXPECT_EQ(rayleigh.component, "Z");
   EXPECT_DOUBLE_EQ(rayleigh.direction.up, 1);
+  EXPECT_EQ(input.parameters, ParameterSet::Velocities);
+  EXPECT_EQ(input.scaling, Scaling::Relative);
+  EXPECT_EQ(input.calculation.quantity, Quantity::Velocity);
+  EXPECT_FALSE(input.volume || input.sections || input.maps);
+
+  const auto volume =
+      ReadKernelInput(fs::path(YSPEC_EXAMPLES_DIR) / "kernels-3d/s-wave.json");
+  ASSERT_TRUE(volume.volume);
+  EXPECT_EQ(volume.volume->degree, 48);
 }
 
 TEST(Input, RefusesFaultyKernels) {
@@ -316,21 +326,34 @@ TEST(Input, RefusesFaultyKernels) {
   "sources": [{ "depth_km": 10, "latitude": 0, "longitude": 0,
     "moment_tensor_Nm": { "rr": 1, "rt": 0, "rp": 0, "tt": 0, "tp": 0,
                           "pp": 0 } }],
-  "measurement": {
-    "receiver": { "depth_km": 3, "location": [0, 40] },
-    "component": "R",
-    "traveltime": { "window_s": [600, 900], "taper_s": 50 } },
+  "receiver": { "depth_km": 3, "location": [0, 40] },
+  "measurements": [
+    { "component": "R",
+      "traveltime": { "window_s": [600, 900], "taper_s": 50 } },
+    { "name": "late", "component": "Z",
+      "traveltime": { "window_s": [1200, 1500] } } ],
   "kernels": { "parameters": "anisotropic",
-               "mesh": { "order": 4, "max_element_km": 20 } }
+               "mesh": { "order": 4, "max_element_km": 20 },
+               "sections": { "spacing_deg": 0.5, "radial_spacing_km": 50 },
+               "maps": { "depths_km": [100, 600] } }
 })");
   const auto input = ReadKernelInput(Write("kernels.json", good));
   EXPECT_EQ(input.parameters, ParameterSet::Anisotropic);
   EXPECT_EQ(input.scaling, Scaling::Absolute);
   EXPECT_EQ(input.mesh.order, 4);
   EXPECT_DOUBLE_EQ(input.mesh.maxElement, 20e3);
+  ASSERT_EQ(input.measurements.size(), 2u);
+  // Numbered where not named.
+  EXPECT_EQ(input.measurements[0].name, "1");
+  EXPECT_EQ(input.measurements[1].name, "late");
   // Radial, from a source on the equator to a receiver east along it.
-  EXPECT_NEAR(input.direction.east, 1, 1e-9);
-  EXPECT_NEAR(input.direction.north, 0, 1e-9);
+  EXPECT_NEAR(input.measurements[0].direction.east, 1, 1e-9);
+  EXPECT_NEAR(input.measurements[0].direction.north, 0, 1e-9);
+  ASSERT_TRUE(input.sections && input.maps);
+  EXPECT_DOUBLE_EQ(input.sections->spacing, 0.5);
+  EXPECT_DOUBLE_EQ(input.sections->radialSpacing, 50e3);
+  EXPECT_DOUBLE_EQ(input.sections->margin, SectionOptions{}.margin);
+  EXPECT_EQ(input.maps->depths, (std::vector<double>{100e3, 600e3}));
   for (const auto& [from, to] :
        std::initializer_list<std::pair<std::string_view, std::string_view>>{
            {R"("component": "R")", R"("component": "X")"},
@@ -338,6 +361,10 @@ TEST(Input, RefusesFaultyKernels) {
            {R"([600, 900])", R"([600, 1900])"},
            {R"("taper_s": 50)", R"("taper_s": 200)"},
            {R"("location": [0, 40])", R"("distance_deg": 40)"},
+           {R"("name": "late")", R"("name": "1")"},
+           {R"("name": "late")", R"("name": "a/b")"},
+           {R"("spacing_deg": 0.5)", R"("spacing_deg": 0)"},
+           {R"("depths_km": [100, 600])", R"("depths_km": [-1])"},
            {R"("anisotropic")", R"("elastic")"},
            {R"("order": 4)", R"("order": 0)"},
            {R"("traveltime")", R"("amplitude")"},

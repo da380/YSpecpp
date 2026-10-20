@@ -33,22 +33,12 @@ struct ReceiverGeometry {
 };
 
 /**
- * @brief The geometry of a receiver relative to a source.
+ * @brief The geometry of a point relative to a source, both given by their
+ * geocentric colatitudes and longitudes (radians).
  */
-inline ReceiverGeometry Geometry(const Location& receiver,
-                                 const Location& source) {
+inline ReceiverGeometry GeometryAt(double thetaR, double phiR, double thetaS,
+                                   double phiS) {
   constexpr auto pi = std::numbers::pi;
-  using Sphere::Degree;
-
-  auto offPole = [](double latitude) {
-    if (latitude == 90) return 89.98;
-    if (latitude == -90) return -89.98;
-    return latitude;
-  };
-  const auto thetaR = Sphere::Colatitude(offPole(receiver.latitude));
-  const auto thetaS = Sphere::Colatitude(offPole(source.latitude));
-  const auto phiR = receiver.longitude * Degree;
-  const auto phiS = source.longitude * Degree;
 
   // The distance from the cross and dot products of the unit vectors, which
   // keeps its precision near 0 and pi where an arc cosine does not.
@@ -81,6 +71,23 @@ inline ReceiverGeometry Geometry(const Location& receiver,
   const auto atReceiver = azimuth(thetaR, phiR, thetaS, phiS);
   const auto atSource = azimuth(thetaS, phiS, thetaR, phiR);
   return {delta, pi - atSource, 2 * pi - atReceiver};
+}
+
+/**
+ * @brief The geometry of a receiver relative to a source.
+ */
+inline ReceiverGeometry Geometry(const Location& receiver,
+                                 const Location& source) {
+  using Sphere::Degree;
+  auto offPole = [](double latitude) {
+    if (latitude == 90) return 89.98;
+    if (latitude == -90) return -89.98;
+    return latitude;
+  };
+  return GeometryAt(Sphere::Colatitude(offPole(receiver.latitude)),
+                    receiver.longitude * Degree,
+                    Sphere::Colatitude(offPole(source.latitude)),
+                    source.longitude * Degree);
 }
 
 }  // namespace YSpec

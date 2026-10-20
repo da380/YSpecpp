@@ -18,7 +18,8 @@ in full.
 
 YSpec needs a C++23 compiler (GCC 13 or Clang 18 and later), CMake 3.24 or
 later, FFTW3 (in double, single and long double precision, as FFTWpp requires),
-and optionally OpenMP. Everything else is fetched by CMake:
+netCDF-C for writing three-dimensional kernels (`-DYSPEC_WITH_NETCDF=OFF` builds
+without it), and optionally OpenMP. Everything else is fetched by CMake:
 [NumericConcepts](https://github.com/da380/NumericConcepts),
 [Interpolation](https://github.com/da380/Interpolation),
 [FFTWpp](https://github.com/da380/FFTWpp),
@@ -80,6 +81,7 @@ that runs it and plots the result:
 | `cross-section` | `yspec-snapshot` | the wavefield on a great circle through the whole earth at six times |
 | `map` | `yspec-snapshot` | the wavefield at the sea floor around the source, over the whole globe |
 | `kernels` | `yspec-kernels` | the radial kernels of an S-wave and a Rayleigh-wave traveltime |
+| `kernels-3d` | `yspec-kernels` | the three-dimensional kernel of an S-wave traveltime: its banana and Fresnel zones |
 
 ```sh
 cd build
@@ -104,8 +106,10 @@ poetry -P plotting run yspec-plot section build/examples/record-section/input.js
 `yspec-plot` takes the input file of a run and finds the output from it:
 `section` draws a record section, `traces` the components at a few receivers,
 `compare` one receiver in several runs, `snapshot` a section through the
-earth or a map around the source, and `kernels` the kernels of a measurement
-against radius, below its seismogram and window. The components of seismograms are Z, N and
+earth or a map around the source, `kernels` the kernels of a measurement
+against radius, below its seismogram and window, and `volume` its
+three-dimensional kernels, from the model file, on a section along the great
+circle through the source and the receiver and on maps at some depths. The components of seismograms are Z, N and
 E, or R and T, radial and transverse to the source. Without `-o` the figure is
 shown.
 
@@ -260,7 +264,8 @@ and `kernels` replace `receivers`:
 "kernels": {
   "parameters": "velocities",
   "scaling": "relative",
-  "mesh": { "order": 5, "max_element_km": 50 }
+  "mesh": { "order": 5, "max_element_km": 50 },
+  "volume": { "degree": 48, "max_element_km": 100 }
 }
 ```
 
@@ -283,8 +288,8 @@ factors) or `anisotropic` (density at fixed velocities, the five speeds and
 eta of transverse isotropy, and the inverse quality factors). `scaling` is
 `absolute` (the default), for perturbations of the parameters, or `relative`,
 for perturbations of their logarithms. The mesh has Gauss-Legendre nodes in
-elements between the knots of the model, the source and the receiver, no
-larger than asked.
+elements between the discontinuities of the model, the source and the
+receiver, no larger than asked.
 
 Two files are written. `<prefix>.kernels` has a header that describes the
 measurement and the units and gives the kernels' point parts at the source
@@ -300,6 +305,28 @@ adjoint source. Both kernels and point parts predict finite differences of
 the measurement to about 1e-6, in every treatment of gravity; the tests
 check them. The S-wave example, to 15 mHz and degree 300 at 1040 nodes,
 takes about 15 s on four threads.
+
+With `volume`, the three-dimensional kernels are computed as well, for the
+same parameters at fixed density: laterally varying perturbations of density
+would take the model out of hydrostatic equilibrium, and are left out (see
+the derivation). They are written as a model file of
+[planetmodel](https://github.com/da380/planetmodel), `<prefix>.nc`, on the
+skeleton of the model's discontinuities, with nodes in each layer no further
+apart than `max_element_km`, both sides of each discontinuity included, and at
+each on a Gauss-Legendre grid resolving degree `degree` and at the poles; a
+field `K_vs`, say, for each parameter, read linearly between the nodes.
+planetmodel draws sections and maps of them, and writes them for ParaView.
+Each field is evaluated in its own frame, the forward field with the source at
+the pole and the adjoint field with the receiver there, where they need only
+the few orders a point source excites, and the two strains are turned into one
+frame at each point; the integral of each kernel over every sphere is the
+radial kernel, and the kernels at single points agree with those computed in
+the source's frame alone, with the adjoint field's every order, which the
+tests check. The cost is about that of the seismograms of two sources at each
+point of the grid at each node, so modest grids are wise: the example, to 10
+mHz and degree 200 on a grid of degree 48, takes about a minute on four
+threads. Writing model files needs netCDF-C (`libnetcdf-dev`); YSpec builds
+without it, with `-DYSPEC_WITH_NETCDF=OFF`, and does everything else.
 
 ## Accuracy and speed
 

@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")"
 for example in record-section instrument depths gravity force cross-section \
-  map kernels; do
+  map kernels kernels-3d kernels-gallery; do
   echo "== $example"
   sh "$example/run.sh"
 done

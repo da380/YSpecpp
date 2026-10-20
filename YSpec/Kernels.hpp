@@ -22,8 +22,8 @@
  * with the equilibrium gravity that follows from it, of its five Love moduli,
  * at fixed density, and of their inverse quality factors. They are evaluated
  * on a mesh in radius, with Gauss-Legendre nodes in elements between the
- * knots of the model, the source and the receiver, and come with the weights
- * of the quadrature on that mesh.
+ * discontinuities of the model, the source and the receiver, and come with
+ * the weights of the quadrature on that mesh.
  */
 
 #include <array>
@@ -118,6 +118,21 @@ struct Measurement {
 Measurement Traveltime(const Model& model, const Calculation& calculation,
                        const Source& source, const Receiver& receiver,
                        const Direction& direction, const Window& window);
+
+/**
+ * @brief The traveltimes of several phases, or components, at one receiver,
+ * as Traveltime gives each, from one synthetic.
+ * @param directions The direction of each seismogram measured.
+ * @param windows The window of each.
+ * @throws std::invalid_argument if there is not a window for each direction,
+ * or as Traveltime does.
+ */
+std::vector<Measurement> Traveltimes(const Model& model,
+                                     const Calculation& calculation,
+                                     const Source& source,
+                                     const Receiver& receiver,
+                                     std::span<const Direction> directions,
+                                     std::span<const Window> windows);
 
 /**
  * @brief The parameters of a spherically symmetric model, as the radial
@@ -237,6 +252,18 @@ RadialKernels ComputeRadialKernels(const Model& model,
                                    const RadialMesh& mesh = {},
                                    const Progress& progress = {});
 
+/**
+ * @brief Computes the radial kernels of several measurements at one
+ * receiver, for little more than the cost of one: the forward field is the
+ * same for all, and the adjoint field is linear in its force.
+ * @throws std::invalid_argument if the measurements are not all at one
+ * receiver, or as the other overload does.
+ */
+std::vector<RadialKernels> ComputeRadialKernels(
+    const Model& model, const Calculation& calculation, const Source& source,
+    std::span<const Measurement> measurements, const RadialMesh& mesh = {},
+    const Progress& progress = {});
+
 /** @brief The sets of parameters in which radial kernels can be given. */
 enum class ParameterSet {
   /// rho, A, C, F, L, N, qA, qF, qMu: the model's own, density at fixed
@@ -285,5 +312,177 @@ struct NamedKernels {
  */
 NamedKernels Reparameterise(const RadialKernels& kernels, const Model& model,
                             ParameterSet set, Scaling scaling);
+
+/** @brief A radius (m) in a layer of the model, at which kernels are sampled.
+ */
+struct KernelNode {
+  Int layer;      ///< The layer, which settles the side of a discontinuity.
+  double radius;  ///< The radius (m).
+};
+
+/** @brief A place on the sphere, at which kernels are sampled. */
+struct KernelPlace {
+  double colatitude;  ///< The geocentric colatitude (radians).
+  double longitude;   ///< The longitude (radians).
+  /// For places laid out by the path from the source to the receiver, the
+  /// distance along its great circle from the source (degrees).
+  double along = 0;
+  /// And the distance from it (degrees), positive to the left of travel.
+  double across = 0;
+};
+
+/** @brief Where kernels are sampled: at each node, the same places. */
+struct KernelSampling {
+  std::vector<KernelNode> nodes;    ///< The nodes in radius.
+  std::vector<KernelPlace> places;  ///< The places on the sphere.
+};
+
+/** @brief How three-dimensional kernels are sampled through the earth. */
+struct VolumeGrid {
+  int degree = 64;            ///< The angular grid resolves degrees to this.
+  double maxElement = 100e3;  ///< The largest interval between radii (m).
+};
+
+/**
+ * @brief The whole earth, laid out as planetmodel lays out its model files:
+ * in each layer, radii equally spaced from its bottom to its top, both
+ * included, so that each side of a discontinuity has its own; at each, a
+ * Gauss-Legendre grid of geocentric colatitudes, increasing, and equally
+ * spaced longitudes from zero, colatitude by colatitude, followed by the
+ * north and south poles.
+ */
+KernelSampling VolumeSampling(const Model& model, const VolumeGrid& grid);
+
+/**
+ * @brief How sections along and across the path from the source to the
+ * receiver are laid out. Angles are in degrees.
+ */
+struct SectionOptions {
+  double margin = 15;           ///< How far the path runs beyond its ends.
+  double halfWidth = 15;        ///< How far a section across reaches from it.
+  double spacing = 0.2;         ///< The spacing of places on the sections.
+  double radialSpacing = 25e3;  ///< The largest interval between radii (m).
+};
+
+/**
+ * @brief The section through the earth along the great circle through the
+ * source and the receiver, from @c margin behind the source to as far beyond
+ * the receiver, with radii through every layer as in VolumeSampling.
+ */
+KernelSampling PathSection(const Model& model, const Location& source,
+                           const Location& receiver,
+                           const SectionOptions& options = {});
+
+/**
+ * @brief The section through the earth across the path at its middle, along
+ * the great circle perpendicular to it there, out to @c halfWidth on each
+ * side.
+ */
+KernelSampling CrossSection(const Model& model, const Location& source,
+                            const Location& receiver,
+                            const SectionOptions& options = {});
+
+/** @brief How maps around the path are laid out. Angles are in degrees. */
+struct MapOptions {
+  std::vector<double> depths;  ///< The depths of the maps (m).
+  double margin = 10;          ///< How far they run beyond its ends.
+  double halfWidth = 15;       ///< How far they reach from it.
+  double spacing = 0.5;        ///< The spacing of places on them.
+};
+
+/**
+ * @brief Maps at some depths of the region around the path, on a grid of
+ * distances along and across it. A depth at a discontinuity is taken on its
+ * upper side.
+ */
+KernelSampling PathMaps(const Model& model, const Location& source,
+                        const Location& receiver, const MapOptions& options);
+
+/**
+ * @brief Kernels for laterally varying perturbations of the elastic
+ * parameters, at fixed density, sampled at points.
+ *
+ * @details @f$\delta J = \int_V \sum_X K_X\,\delta X\,dV@f$, with
+ * @f$\delta X@f$ the perturbations of the elastic parameters of a set and of
+ * their inverse quality factors (or of their logarithms, for relative
+ * kernels), at fixed density: perturbations of any shape that leave the
+ * model in hydrostatic equilibrium. Density, whose lateral perturbations do
+ * not, has none (see docs/theory/adjoint-kernels.tex).
+ *
+ * Each field is evaluated in its own frame, the forward field's with the
+ * source at the pole and the adjoint field's with the receiver there, so
+ * that only the orders a point source excites are summed, and the two are
+ * turned into one frame at each point. At the source the kernels also have a
+ * part concentrated there, the three-dimensional form of the point parts of
+ * RadialKernels, which no sampling holds; and near the source and the
+ * receiver they vary on the scale of the shortest wavelength summed.
+ */
+class SampledKernels {
+ public:
+  /** @brief Zero kernels of the named parameters on a sampling. */
+  SampledKernels(std::vector<std::string> names, KernelSampling sampling);
+
+  /** @brief The parameters. */
+  const std::vector<std::string>& Names() const { return names_; }
+  /** @brief The nodes in radius. */
+  std::span<const KernelNode> Nodes() const { return sampling_.nodes; }
+  /** @brief The places on the sphere. */
+  std::span<const KernelPlace> Places() const { return sampling_.places; }
+
+  /** @brief The kernel of a parameter at the places of a node. */
+  std::span<double> Values(std::size_t parameter, std::size_t node) {
+    return {values_.data() + Offset(parameter, node), Places().size()};
+  }
+  /** @brief The kernel of a parameter at the places of a node. */
+  std::span<const double> Values(std::size_t parameter,
+                                 std::size_t node) const {
+    return {values_.data() + Offset(parameter, node), Places().size()};
+  }
+
+ private:
+  std::vector<std::string> names_;
+  KernelSampling sampling_;
+  std::vector<double> values_;
+
+  std::size_t Offset(std::size_t parameter, std::size_t node) const {
+    return (parameter * Nodes().size() + node) * Places().size();
+  }
+};
+
+/**
+ * @brief Computes the three-dimensional kernels of several measurements at
+ * one receiver on several samplings, in one pass.
+ *
+ * @details The forward field is the same for every measurement, and the
+ * adjoint field is linear in its force: it is evaluated for an orthonormal
+ * basis of the measurements' directions, one, two or three forces, and each
+ * measurement's is a combination, so that further measurements cost little.
+ * @param model The earth model.
+ * @param calculation The calculation of the seismogram measured.
+ * @param source The source.
+ * @param measurements The measurements, all at one receiver.
+ * @param set The parameters, of which density is left out.
+ * @param scaling Absolute or relative.
+ * @param samplings Where to sample the kernels.
+ * @param progress Called as frequencies are completed, if given.
+ * @return The kernels of each measurement on each sampling.
+ * @throws std::invalid_argument as ComputeRadialKernels does.
+ */
+std::vector<std::vector<SampledKernels>> ComputeSampledKernels(
+    const Model& model, const Calculation& calculation, const Source& source,
+    std::span<const Measurement> measurements, ParameterSet set,
+    Scaling scaling, std::span<const KernelSampling> samplings,
+    const Progress& progress = {});
+
+/**
+ * @brief Computes the three-dimensional kernels of a measurement through the
+ * whole earth, on VolumeSampling.
+ * @throws std::invalid_argument as ComputeRadialKernels does, or if the grid
+ * is unusable.
+ */
+SampledKernels ComputeVolumeKernels(
+    const Model& model, const Calculation& calculation, const Source& source,
+    const Measurement& measurement, ParameterSet set, Scaling scaling,
+    const VolumeGrid& grid = {}, const Progress& progress = {});
 
 }  // namespace YSpec

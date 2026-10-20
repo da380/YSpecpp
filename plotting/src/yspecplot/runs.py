@@ -156,10 +156,91 @@ class SnapshotRun:
         return self._data[time_index][:, self.COLUMNS[component]].reshape(shape)
 
 
-class KernelRun:
-    """A run of yspec-kernels: the measurement and its radial kernels."""
+def _along(start, azimuth, distance):
+    """The geographic latitude and longitude (degrees) at a distance and
+    azimuth (degrees) from a point, along a great circle of the sphere of
+    geocentric latitudes, as YSpec places receivers."""
+    ratio = 0.993277
+    latitude = math.atan(ratio * math.tan(math.radians(start[0])))
+    longitude = math.radians(start[1])
+    a = math.radians(azimuth)
+    d = math.radians(distance)
+    end = math.asin(math.sin(latitude) * math.cos(d) +
+                    math.cos(latitude) * math.sin(d) * math.cos(a))
+    turn = math.atan2(math.sin(a) * math.sin(d) * math.cos(latitude),
+                      math.cos(d) - math.sin(latitude) * math.sin(end))
+    return (math.degrees(math.atan(math.tan(end) / ratio)),
+            math.degrees(longitude + turn))
 
-    def __init__(self, path):
+
+def _distance(a, b):
+    """The angle (degrees) between two geographic places, on the sphere of
+    their geocentric latitudes."""
+    def unit(place):
+        latitude = math.atan(0.993277 * math.tan(math.radians(place[0])))
+        longitude = math.radians(place[1])
+        return np.array([math.cos(latitude) * math.cos(longitude),
+                         math.cos(latitude) * math.sin(longitude),
+                         math.sin(latitude)])
+    x, y = unit(a), unit(b)
+    return math.degrees(math.atan2(np.linalg.norm(np.cross(x, y)),
+                                   np.dot(x, y)))
+
+
+@dataclass(frozen=True)
+class SectionLayer:
+    """One layer of a section or a stack of maps: depths (km) by places."""
+
+    index: int
+    depth: np.ndarray         # (n,), km
+    values: dict              # name -> (n, m)
+
+
+@dataclass(frozen=True)
+class Sampled:
+    """Kernels sampled on a section or on maps: the places' distances along
+    and across the path (degrees), their latitudes and longitudes, and the
+    kernels layer by layer."""
+
+    along: np.ndarray
+    across: np.ndarray
+    latitude: np.ndarray
+    longitude: np.ndarray
+    layers: list
+
+
+def _read_sampled(file, section=None):
+    """The kernels in a .sections or .maps file, of one section if named."""
+    header = [line for line in file.read_text().splitlines()
+              if line.startswith("#")]
+    columns = header[-1].lstrip("# ").split()
+    rows = [line.split() for line in file.read_text().splitlines()
+            if not line.startswith("#")]
+    if section is not None:
+        rows = [row[1:] for row in rows if row[0] == section]
+        columns = columns[1:]
+    table = np.array(rows, dtype=float)
+    names = columns[6:]
+    layer, depth = table[:, 0].astype(int), table[:, 1]
+    # The places of the first node, which every node shares.
+    first = (layer == layer[0]) & (depth == depth[0])
+    places = int(first.sum())
+    along, across, latitude, longitude = table[:places, 2:6].T
+    layers = []
+    for index in dict.fromkeys(layer):
+        rows_here = table[layer == index]
+        nodes = len(rows_here) // places
+        depth = rows_here[::places, 1]
+        values = {name: rows_here[:, 6 + j].reshape(nodes, places)
+                  for j, name in enumerate(names)}
+        layers.append(SectionLayer(int(index), depth, values))
+    return Sampled(along, across, latitude, longitude, layers)
+
+
+class KernelRun:
+    """A run of yspec-kernels: one of its measurements, and its kernels."""
+
+    def __init__(self, path, measurement=None):
         self.path = pathlib.Path(path)
         self.input = json.loads(self.path.read_text())
         output = self.input["output"]
@@ -167,25 +248,61 @@ class KernelRun:
         self.quantity = output.get("quantity", "displacement")
         self.model = self.path.parent / self.input["model"]
         self.hypocentre = self.input["sources"][0]
-        measurement = self.input["measurement"]
-        self.component = measurement["component"]
-        self.window = measurement["traveltime"]["window_s"]
+        measurements = self.input["measurements"]
+        names = [m.get("name", str(i + 1))
+                 for i, m in enumerate(measurements)]
+        self.names = names
+        name = names[0] if measurement is None else measurement
+        if name not in names:
+            raise ValueError(f"there is no measurement {name} in {path}: "
+                             f"there are {', '.join(names)}")
+        self.name = name
+        chosen = measurements[names.index(name)]
+        self.component = chosen["component"]
+        self.window = chosen["traveltime"]["window_s"]
+        if len(names) > 1:
+            prefix = prefix.with_name(f"{prefix.name}.{name}")
+        self.prefix = prefix
         kernels = self.input.get("kernels", {})
         self.relative = kernels.get("scaling", "absolute") == "relative"
         self.time, self.seismogram, self.taper, self.adjoint = np.loadtxt(
-            prefix.with_name(prefix.name + ".measurement")).T
-        file = prefix.with_name(prefix.name + ".kernels")
+            self._file(".measurement")).T
+        file = self._file(".kernels")
         header = [line for line in file.read_text().splitlines()
                   if line.startswith("#")]
         self.description = header[0].removeprefix("# yspec-kernels: ")
         self.at_source = [float(v) for v in next(
             line for line in header
             if line.startswith("# at_source")).split()[2:]]
-        self.names = header[-1].split()[4:]
+        self.parameters = header[-1].split()[4:]
         table = np.loadtxt(file)
         self.radius, self.depth, self.weight = table[:, :3].T
-        self.kernels = {name: table[:, 3 + j]
-                        for j, name in enumerate(self.names)}
-        self.at_source = dict(zip(self.names, self.at_source))
-        self.source_radius = self.radius[-1] + self.depth[-1] - \
-            self.hypocentre["depth_km"]
+        self.kernels = {p: table[:, 3 + j]
+                        for j, p in enumerate(self.parameters)}
+        self.at_source = dict(zip(self.parameters, self.at_source))
+        self.surface = self.radius[-1] + self.depth[-1]
+        self.source_radius = self.surface - self.hypocentre["depth_km"]
+        self.volume = self._file(".nc")
+        # Where the receiver is: at a location, or at a distance and azimuth
+        # from the source.
+        receiver = self.input["receiver"]
+        self.receiver_depth = receiver["depth_km"]
+        source = (self.hypocentre["latitude"], self.hypocentre["longitude"])
+        if "location" in receiver:
+            self.receiver_location = tuple(receiver["location"])
+        else:
+            self.receiver_location = _along(source, receiver["azimuth_deg"],
+                                            receiver["distance_deg"])
+        self.distance = _distance(source, self.receiver_location)
+
+    def _file(self, suffix):
+        return self.prefix.with_name(self.prefix.name + suffix)
+
+    def sections(self):
+        """The kernels on the sections along and across the path."""
+        file = self._file(".sections")
+        return (_read_sampled(file, "path"), _read_sampled(file, "across"))
+
+    def maps(self):
+        """The kernels on the maps."""
+        return _read_sampled(self._file(".maps"))

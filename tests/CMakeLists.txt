@@ -36,6 +36,7 @@ yspec_add_test(TestHomogeneousSphere)
 yspec_add_test(TestSynthetics)
 yspec_add_test(TestStrain)
 yspec_add_test(TestKernels)
+yspec_add_test(TestVolumeKernels)
 yspec_add_test(TestSnapshots)
 yspec_add_test(TestRun)
 

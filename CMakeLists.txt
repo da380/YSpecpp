@@ -74,10 +74,12 @@ FetchContent_Declare(planetmodel
   GIT_TAG ${YSPEC_PLANETMODEL_TAG}
   SOURCE_SUBDIR cpp)
 
-# YSpec reads decks and JSON, neither of which needs planetmodel's netCDF
-# model files; GSHTrans's matrix kernel, the only part needing BLAS, is not
-# used.
-set(PLANETMODEL_WITH_NETCDF OFF CACHE BOOL "")
+# Three-dimensional kernels are written as planetmodel's model files, over
+# netCDF-C; without it YSpec does everything else. GSHTrans's matrix kernel,
+# the only part needing BLAS, is not used.
+option(YSPEC_WITH_NETCDF
+       "Write three-dimensional kernels as model files (needs netCDF-C)" ON)
+set(PLANETMODEL_WITH_NETCDF ${YSPEC_WITH_NETCDF} CACHE BOOL "" FORCE)
 set(GSHTRANS_WITH_BLAS OFF CACHE STRING "")
 
 FetchContent_MakeAvailable(NumericConcepts Interpolation FFTWpp GaussQuad
@@ -125,7 +127,8 @@ add_library(YSpec
   src/Run.cpp
   src/Snapshots.cpp
   src/Synthetics.cpp
-  src/TimeSeries.cpp)
+  src/TimeSeries.cpp
+  src/SampledKernels.cpp)
 add_library(YSpec::YSpec ALIAS YSpec)
 set_target_properties(YSpec PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(YSpec PUBLIC
@@ -133,6 +136,8 @@ target_include_directories(YSpec PUBLIC
 target_compile_features(YSpec PUBLIC cxx_std_23)
 target_link_libraries(YSpec PRIVATE YSpecInternal)
 target_compile_options(YSpec PRIVATE ${YSPEC_WARNINGS})
+# The version, which the files the library writes record.
+target_compile_definitions(YSpec PRIVATE YSPEC_VERSION="${PROJECT_VERSION}")
 if(YSPEC_WITH_OPENMP)
   target_link_libraries(YSpec PRIVATE OpenMP::OpenMP_CXX)
 endif()

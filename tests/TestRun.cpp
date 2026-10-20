@@ -168,18 +168,26 @@ TEST(Run, WritesKernelsAndTheirMeasurement) {
       "moment_tensor_Nm": { "rr": 1e18, "rt": 0, "rp": 0, "tt": 0, "tp": 0,
                             "pp": 0 } }
   ],
-  "measurement": {
-    "receiver": { "depth_km": 3, "distance_deg": 30, "azimuth_deg": 45 },
-    "component": "Z",
-    "traveltime": { "window_s": [400, 1000], "taper_s": 100 } },
+  "receiver": { "depth_km": 3, "distance_deg": 30, "azimuth_deg": 45 },
+  "measurements": [
+    { "name": "Z", "component": "Z",
+      "traveltime": { "window_s": [400, 1000], "taper_s": 100 } },
+    { "name": "T", "component": "T",
+      "traveltime": { "window_s": [400, 1000], "taper_s": 100 } } ],
   "kernels": { "parameters": "moduli", "scaling": "relative",
-               "mesh": { "order": 3, "max_element_km": 200 } }
+               "mesh": { "order": 3, "max_element_km": 200 },
+               "sections": { "margin_deg": 5, "half_width_deg": 5,
+                             "spacing_deg": 2, "radial_spacing_km": 500 },
+               "maps": { "depths_km": 100, "margin_deg": 5,
+                         "half_width_deg": 5, "spacing_deg": 2 } }
 })";
   const auto result = RunKernels(directory / "input.json");
-  EXPECT_EQ(result.named.names,
+  ASSERT_EQ(result.measurements.size(), 2u);
+  const auto& z = result.measurements[0];
+  EXPECT_EQ(z.named.names,
             (std::vector<std::string>{"rho", "kappa", "mu", "qkappa", "qmu"}));
   // The kernels: the header, then a line for each radius.
-  auto table = std::ifstream(directory / "out.kernels");
+  auto table = std::ifstream(directory / "out.Z.kernels");
   ASSERT_TRUE(table);
   auto line = std::string{};
   auto header = std::vector<std::string>{};
@@ -193,12 +201,12 @@ TEST(Run, WritesKernelsAndTheirMeasurement) {
     auto values = std::array<double, 8>{};
     for (auto& value : values) row >> value;
     ASSERT_TRUE(row) << line;
-    EXPECT_NEAR(values[0] * 1e3, result.kernels.Radii()[rows], 1e-2);
-    EXPECT_NEAR(values[4], result.named.values[1][rows],
-                1e-5 * std::abs(result.named.values[1][rows]) + 1e-300);
+    EXPECT_NEAR(values[0] * 1e3, z.kernels.Radii()[rows], 1e-2);
+    EXPECT_NEAR(values[4], z.named.values[1][rows],
+                1e-5 * std::abs(z.named.values[1][rows]) + 1e-300);
     ++rows;
   }
-  EXPECT_EQ(rows, result.kernels.Size());
+  EXPECT_EQ(rows, z.kernels.Size());
   ASSERT_GE(header.size(), 2u);
   EXPECT_EQ(header.back(),
             "# radius_km depth_km weight_m3 rho kappa mu qkappa qmu");
@@ -206,13 +214,32 @@ TEST(Run, WritesKernelsAndTheirMeasurement) {
     return h.starts_with("# at_source ");
   }));
   // The measurement: a line for each sample.
-  auto measurement = std::ifstream(directory / "out.measurement");
+  auto measurement = std::ifstream(directory / "out.Z.measurement");
   ASSERT_TRUE(measurement);
   auto samples = std::size_t{0};
   while (std::getline(measurement, line)) {
     if (!line.starts_with('#')) ++samples;
   }
   EXPECT_EQ(samples, result.seismogram.Samples());
+  // The sections and the maps of each, a line for each node and place.
+  for (const auto& name : {"Z", "T"}) {
+    const auto& kernels = result.measurements[name == std::string("Z") ? 0 : 1];
+    ASSERT_TRUE(kernels.path && kernels.across && kernels.maps);
+    auto count = [&](const std::string& suffix) {
+      auto file =
+          std::ifstream(directory / ("out." + std::string(name) + suffix));
+      auto lines = std::size_t{0};
+      for (auto line = std::string{}; std::getline(file, line);) {
+        if (!line.starts_with('#')) ++lines;
+      }
+      return lines;
+    };
+    auto size = [](const SampledKernels& k) {
+      return k.Nodes().size() * k.Places().size();
+    };
+    EXPECT_EQ(count(".sections"), size(*kernels.path) + size(*kernels.across));
+    EXPECT_EQ(count(".maps"), size(*kernels.maps));
+  }
 }
 
 }  // namespace

@@ -157,6 +157,16 @@ class RadialSolver {
                std::vector<double> receiverRadii, Gravity gravity,
                bool attenuation = true, SolverOptions options = {});
 
+  /**
+   * @brief A solver with its receivers given as points, each in its layer,
+   * so that one at a discontinuity is on the side named.
+   * @throws std::invalid_argument as the other constructor does, or if a
+   * receiver is outside its layer.
+   */
+  RadialSolver(const Model& model, std::vector<double> sourceRadii,
+               std::vector<Point> receivers, Gravity gravity,
+               bool attenuation = true, SolverOptions options = {});
+
   /** @brief A solver for one source radius and one receiver radius. */
   RadialSolver(const Model& model, double sourceRadius, double receiverRadius,
                Gravity gravity, bool attenuation = true,
