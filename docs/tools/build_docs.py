@@ -109,12 +109,15 @@ def main() -> int:
         print(run.stdout, end='')
     if run.stderr:
         print(run.stderr, end='', file=sys.stderr)
+    # Doxygen sends its warnings to the log, and may say nothing elsewhere:
+    # show the log whenever the build is rejected, so CI states the reason.
     warning_log = api / 'doxygen-warnings.log'
-    if run.returncode:
-        return run.returncode
-    if warning_log.exists() and warning_log.stat().st_size:
-        print(f'Doxygen warning log is not empty: {warning_log}', file=sys.stderr)
-        return 1
+    warnings = warning_log.read_text() if warning_log.exists() else ''
+    if run.returncode or warnings:
+        if warnings:
+            print(f'Doxygen warnings ({warning_log}):', file=sys.stderr)
+            print(warnings, end='', file=sys.stderr)
+        return run.returncode or 1
     if not (api / 'index.html').is_file():
         print('Doxygen did not create api/index.html', file=sys.stderr)
         return 1

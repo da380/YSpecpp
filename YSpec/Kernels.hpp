@@ -122,6 +122,10 @@ Measurement Traveltime(const Model& model, const Calculation& calculation,
 /**
  * @brief The traveltimes of several phases, or components, at one receiver,
  * as Traveltime gives each, from one synthetic.
+ * @param model The earth model.
+ * @param calculation The calculation of the seismogram.
+ * @param source The source.
+ * @param receiver The receiver.
  * @param directions The direction of each seismogram measured.
  * @param windows The window of each.
  * @throws std::invalid_argument if there is not a window for each direction,

@@ -17,7 +17,7 @@ Gravity can be left out, included in the Cowling approximation, or included
 in full.
 
 It is a C++ library with three programs, and a Python package,
-`yspec-seismo` (see [Python](#python)).
+`yspec-seismo` (see the Python section below).
 
 ## Building
 
@@ -106,7 +106,7 @@ programs are found in the build, on the `PATH`, or in
 `YSPEC_BIN`.
 
 The figures are drawn by `yspec-plot`, which the Python package installs
-with its `plot` extra (see [Python](#python)), built on
+with its `plot` extra (see the Python section below), built on
 [planetmodel](https://github.com/da380/planetmodel), whose sections and
 colour scales it shares, with maps through cartopy. The scripts find it on
 the `PATH`:
