@@ -29,9 +29,11 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "Calculation.hpp"
+#include "Location.hpp"
 #include "Model.hpp"
 #include "Receiver.hpp"
 #include "Seismograms.hpp"
@@ -52,17 +54,44 @@ struct Window {
 };
 
 /**
- * @brief A measurement on one component of a seismogram, through its adjoint
- * source.
+ * @brief A direction at a receiver, by its components up, north and east.
+ */
+struct Direction {
+  double up = 0;     ///< The upward component.
+  double north = 0;  ///< The northward component.
+  double east = 0;   ///< The eastward component.
+};
+
+/** @brief The direction of a component of a seismogram. */
+Direction Along(Component component);
+
+/**
+ * @brief The horizontal direction at a receiver away from a source, along the
+ * great circle through them.
+ */
+Direction RadialDirection(const Location& source, const Location& receiver);
+
+/**
+ * @brief The horizontal direction at a receiver 90 degrees anticlockwise from
+ * RadialDirection, seen from above, as for the transverse component of the
+ * snapshots.
+ */
+Direction TransverseDirection(const Location& source, const Location& receiver);
+
+/**
+ * @brief A measurement on a seismogram, along a direction, through its
+ * adjoint source.
  *
- * @details The measurement changes by @f$\delta J = \int j(t)\,\delta u(t)\,
- * dt@f$, approximated by the sum over the samples of the seismogram, with
- * @f$u@f$ the seismogram as ComputeSeismograms gives it for the same
- * calculation, recorded at the receiver by its instrument, if any.
+ * @details The seismogram measured is @f$u = \hat{\mathbf{d}}\cdot
+ * \mathbf{u}@f$, the combination of the vertical, north and east components
+ * that the direction gives, as ComputeSeismograms gives them for the same
+ * calculation, recorded at the receiver by its instrument, if any. The
+ * measurement changes by @f$\delta J = \int j(t)\,\delta u(t)\,dt@f$,
+ * approximated by the sum over the samples of the seismogram.
  */
 struct Measurement {
   Receiver receiver;    ///< Where it is made.
-  Component component;  ///< On which component.
+  Direction direction;  ///< The direction of the seismogram measured.
   /// @f$j@f$ at the samples of the seismogram, in units of the measurement
   /// per unit of the seismogram per second.
   std::vector<double> adjointSource;
@@ -81,14 +110,14 @@ struct Measurement {
  * @param calculation The calculation of the seismogram.
  * @param source The source.
  * @param receiver The receiver.
- * @param component The component measured.
+ * @param direction The direction of the seismogram measured.
  * @param window The window.
  * @throws std::invalid_argument if the synthetic is zero in the window, or
  * as ComputeSeismograms does.
  */
 Measurement Traveltime(const Model& model, const Calculation& calculation,
                        const Source& source, const Receiver& receiver,
-                       Component component, const Window& window);
+                       const Direction& direction, const Window& window);
 
 /**
  * @brief The parameters of a spherically symmetric model, as the radial
@@ -207,5 +236,54 @@ RadialKernels ComputeRadialKernels(const Model& model,
                                    const Measurement& measurement,
                                    const RadialMesh& mesh = {},
                                    const Progress& progress = {});
+
+/** @brief The sets of parameters in which radial kernels can be given. */
+enum class ParameterSet {
+  /// rho, A, C, F, L, N, qA, qF, qMu: the model's own, density at fixed
+  /// moduli and the moduli at fixed density.
+  Love,
+  /// rho, kappa, mu, qkappa, qmu: density at fixed moduli, and the Voigt
+  /// averages of the moduli, perturbed isotropically: A and C change by
+  /// @f$\delta\kappa + \tfrac43\delta\mu@f$, F by @f$\delta\kappa -
+  /// \tfrac23\delta\mu@f$, L and N by @f$\delta\mu@f$.
+  Moduli,
+  /// rho, vp, vs, qkappa, qmu: density at fixed velocities, and the speeds
+  /// of the Voigt averages, @f$v_p^2 = (\kappa + \tfrac43\mu)/\rho@f$ and
+  /// @f$v_s^2 = \mu/\rho@f$, each at fixed density and the other speed.
+  Velocities,
+  /// rho, vpv, vph, vsv, vsh, eta, qkappa, qmu: density at fixed velocities
+  /// and eta, and the five parameters of transverse isotropy, with
+  /// @f$A = \rho v_{ph}^2@f$, @f$C = \rho v_{pv}^2@f$, @f$L = \rho
+  /// v_{sv}^2@f$, @f$N = \rho v_{sh}^2@f$ and @f$F = \eta(A - 2L)@f$.
+  Anisotropic,
+};
+
+/** @brief Kernels of perturbations @f$\delta X@f$, or of @f$\delta\ln X@f$. */
+enum class Scaling { Absolute, Relative };
+
+/**
+ * @brief Radial kernels of a set of parameters, by name.
+ *
+ * @details As RadialKernels: @f$\delta J = \int\sum_X K_X\,\delta X\,
+ * r^2\,dr + \sum_X P_X\,\delta X(r_s)@f$, with @f$\delta X@f$ replaced by
+ * @f$\delta\ln X@f$ for relative kernels, which are @f$X K_X@f$ and
+ * @f$X P_X@f$. The inverse quality factors qkappa and qmu reach the model's
+ * through Minos's effective quality factors of A, C and F.
+ */
+struct NamedKernels {
+  std::vector<std::string> names;           ///< The parameters.
+  std::vector<std::vector<double>> values;  ///< Each kernel, at the radii.
+  std::vector<double> atSource;             ///< Each point part.
+};
+
+/**
+ * @brief Radial kernels in a set of parameters.
+ * @param kernels The kernels in the model's own parameters.
+ * @param model The model they are for.
+ * @param set The parameters wanted.
+ * @param scaling Absolute or relative.
+ */
+NamedKernels Reparameterise(const RadialKernels& kernels, const Model& model,
+                            ParameterSet set, Scaling scaling);
 
 }  // namespace YSpec

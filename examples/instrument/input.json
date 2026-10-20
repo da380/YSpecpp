@@ -5,7 +5,7 @@
   "degrees": { "max": 400 },
   "frequencies_mHz": { "min": 0.2, "max": 20 },
   "time_series": { "length_min": 90, "time_step_s": 2 },
-  "filter_mHz": [0.3, 0.5, 18, 20],
+  "filter_mHz": [1, 2, 18, 20],
   "sources": [
     { "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
       "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,

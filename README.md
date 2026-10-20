@@ -41,13 +41,15 @@ version, which gives the same results.
 ## Running
 
 There is a program for each kind of output: `yspec` computes seismograms at
-receivers, and `yspec-snapshot` the wavefield at chosen times on a grid
-around each source. They read JSON files that share most of their members.
+receivers, `yspec-snapshot` the wavefield at chosen times on a grid around
+each source, and `yspec-kernels` the sensitivity of a traveltime to the
+model. They read JSON files that share most of their members.
 
 ```sh
 cd build
 bin/yspec examples/input.json
 bin/yspec-snapshot examples/snapshot.json
+bin/yspec-kernels examples/kernels/s-wave.json
 ```
 
 The build copies the example inputs and models into `build/examples`, so the
@@ -77,6 +79,7 @@ that runs it and plots the result:
 | `force` | `yspec` | the waves from a point force, of the kind a landslide exerts |
 | `cross-section` | `yspec-snapshot` | the wavefield on a great circle through the whole earth at six times |
 | `map` | `yspec-snapshot` | the wavefield at the sea floor around the source, over the whole globe |
+| `kernels` | `yspec-kernels` | the radial kernels of an S-wave and a Rayleigh-wave traveltime |
 
 ```sh
 cd build
@@ -100,8 +103,9 @@ poetry -P plotting run yspec-plot section build/examples/record-section/input.js
 
 `yspec-plot` takes the input file of a run and finds the output from it:
 `section` draws a record section, `traces` the components at a few receivers,
-`compare` one receiver in several runs, and `snapshot` a section through the
-earth or a map around the source. The components of seismograms are Z, N and
+`compare` one receiver in several runs, `snapshot` a section through the
+earth or a map around the source, and `kernels` the kernels of a measurement
+against radius, below its seismogram and window. The components of seismograms are Z, N and
 E, or R and T, radial and transverse to the source. Without `-o` the figure is
 shown.
 
@@ -148,7 +152,12 @@ The calculation is read from a JSON file:
   highest frequency; without `time_step_s` the step is a quarter of the
   shortest period.
 - `filter_mHz`: an optional raised-cosine taper, rising from zero to one
-  between its first two corners and falling back between its last two.
+  between its first two corners and falling back between its last two. The
+  taper has zero phase, so its response begins before the origin time, by
+  about the inverse of the width of its lowest ramp; with the damping, that
+  part wraps round and reappears, amplified, at the end of the time series.
+  A low ramp of 1 mHz or more, or a longer time series, keeps it out of the
+  record.
 - `sources`: one or more, each with its hypocentre (geographic latitude) and
   its moment tensor `moment_tensor_Nm`, a point force `force_N` (members
   `r`, `t`, `p`, each defaulting to zero), or both, in spherical coordinates
@@ -235,6 +244,62 @@ With gravity, the free surface of an ocean carries surface-gravity waves
 (tsunamis), which are slow and outlast most time series: on and near the sea
 surface they can wrap around in time, and appear early. A longer time series,
 or points below the sea surface, avoid that.
+
+### Kernels
+
+`yspec-kernels` reads the same members as `yspec`, with one source, except
+that its `output` has only `prefix` and `quantity`, and that `measurement`
+and `kernels` replace `receivers`:
+
+```json
+"measurement": {
+  "receiver": { "depth_km": 3, "distance_deg": 60, "azimuth_deg": 30 },
+  "component": "T",
+  "traveltime": { "window_s": [1000, 1200], "taper_s": 40 }
+},
+"kernels": {
+  "parameters": "velocities",
+  "scaling": "relative",
+  "mesh": { "order": 5, "max_element_km": 50 }
+}
+```
+
+The receiver is at a `location`, or at a distance and azimuth from the
+source, and may have an `instrument`, as in `yspec`. The traveltime of the
+seismogram of the `component` (`Z`, `N`, `E`, or `R` and `T`, radial and
+transverse to the source) is measured by cross-correlation with the synthetic
+itself in the window, with cosine tapers of the given length inside it. Its
+sensitivity to spherically symmetric perturbations of the model is computed
+by the adjoint method (see `docs/theory/adjoint-kernels.tex`): the adjoint
+field is the response, at the same complex frequencies, to a force at the
+receiver, so the cost is about that of the seismograms of two sources at a
+receiver at every node of the mesh.
+
+`parameters` chooses the kernels: `love` (density, A, C, F, L, N and their
+inverse quality factors, the model's own), `moduli` (density, the bulk and
+shear moduli, and their inverse quality factors), `velocities` (the default:
+density at fixed velocities, the isotropic speeds and the inverse quality
+factors) or `anisotropic` (density at fixed velocities, the five speeds and
+eta of transverse isotropy, and the inverse quality factors). `scaling` is
+`absolute` (the default), for perturbations of the parameters, or `relative`,
+for perturbations of their logarithms. The mesh has Gauss-Legendre nodes in
+elements between the knots of the model, the source and the receiver, no
+larger than asked.
+
+Two files are written. `<prefix>.kernels` has a header that describes the
+measurement and the units and gives the kernels' point parts at the source
+(on the line beginning `# at_source`), and a line for each node: its radius
+and depth (km), its weight in the integral over radius (m^3), and each
+kernel, so that the change in the traveltime is the sum over the nodes of
+weight times kernel times perturbation, plus the point parts times the
+perturbations at the source. The point parts come from the jump in the
+displacement across the radius of a moment tensor, which makes the kernels
+of the moduli that set it concentrated there. `<prefix>.measurement` has a
+line for each sample: the time, the seismogram measured, the window and the
+adjoint source. Both kernels and point parts predict finite differences of
+the measurement to about 1e-6, in every treatment of gravity; the tests
+check them. The S-wave example, to 15 mHz and degree 300 at 1040 nodes,
+takes about 15 s on four threads.
 
 ## Accuracy and speed
 
@@ -351,16 +416,20 @@ seismogram to spherically symmetric perturbations of the model, by the adjoint
 method: of the density (with the gravity that follows from it), of the five
 Love moduli and of their quality factors. A measurement is given by its
 adjoint source, and `YSpec::Traveltime` forms that of a cross-correlation
-traveltime in a window. The adjoint field is the forward response, at the same
+traveltime in a window, on the seismogram along any direction
+(`YSpec::Along` a component, `YSpec::RadialDirection`,
+`YSpec::TransverseDirection`). `YSpec::Reparameterise` gives the kernels in
+other parameters, absolute or relative. The adjoint field is the forward response, at the same
 complex frequencies, to a force at the receiver, so the kernels cost about
 what two sets of seismograms at every node of a radial mesh would; they
 predict finite differences of the measurement to about 1e-6, which the tests
 check. The derivation is in `docs/theory/adjoint-kernels.tex`.
 
 `YSpec::ComputeSnapshots` gives the wavefield on a `YSpec::SnapshotGrid` at
-chosen times. `YSpec::RunSeismograms("input.json")` and
-`YSpec::RunSnapshots("snapshot.json")` do what the programs do: read an input
-file, compute what it describes and write it. `YSpec::RadialSolver` gives the
+chosen times. `YSpec::RunSeismograms("input.json")`,
+`YSpec::RunSnapshots("snapshot.json")` and `YSpec::RunKernels("s-wave.json")`
+do what the programs do: read an input file, compute what it describes and
+write it. `YSpec::RadialSolver` gives the
 responses to unit jumps at a set of source radii, at a set of receiver radii,
 for one degree and frequency.
 

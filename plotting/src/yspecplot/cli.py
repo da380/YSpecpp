@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from .runs import SeismogramRun, SnapshotRun
+from .runs import KernelRun, SeismogramRun, SnapshotRun
 
 USAGE = """Pictures of what the YSpec programs write, from the input file of a run.
 
@@ -11,11 +11,13 @@ USAGE = """Pictures of what the YSpec programs write, from the input file of a r
   yspec-plot traces INPUT [--receivers 1 2 ...] [--components ZRT]
   yspec-plot compare INPUT INPUT ... [--labels ...] [--receiver 1]
   yspec-plot snapshot INPUT [--component up] [--common]
+  yspec-plot kernels INPUT [--parameters ...] [--deepest KM]
 
 section: a record section of one component; traces: the components at a
 few receivers; compare: one receiver in several runs, with their
 differences from the last; snapshot: a section through the earth, or a map
-around the source. Components of seismograms are Z (up), N, E, R (radial,
+around the source; kernels: the radial kernels of a measurement, below the
+seismogram and its window. Components of seismograms are Z (up), N, E, R (radial,
 away from the source) and T (transverse, 90 degrees anticlockwise from
 radial seen from above). With several sources, --source chooses one by
 name. Without -o the figure is shown.
@@ -58,6 +60,12 @@ def main(argv=None):
                      help="scale every time alike")
     sub.add_argument("--no-coastlines", action="store_true",
                      help="leave the coastlines off a map")
+    sub = command("kernels", "the radial kernels of a measurement")
+    sub.add_argument("input")
+    sub.add_argument("--parameters", nargs="+",
+                     help="the kernels to draw (by default all)")
+    sub.add_argument("--deepest", type=float,
+                     help="the deepest depth to draw (km)")
     args = parser.parse_args(argv)
 
     import matplotlib
@@ -66,6 +74,7 @@ def main(argv=None):
     import matplotlib.pyplot as plt
 
     from .seismograms import compare, record_section, traces
+    from .kernels import radial_kernels
     from .snapshots import snapshots
     try:
         if args.command == "section":
@@ -80,6 +89,9 @@ def main(argv=None):
                 [SeismogramRun(path, args.source) for path in args.inputs],
                 args.labels, receiver=args.receiver,
                 component=args.component)
+        elif args.command == "kernels":
+            fig = radial_kernels(KernelRun(args.input), args.parameters,
+                                 deepest=args.deepest)
         else:
             fig = snapshots(SnapshotRun(args.input, args.source),
                             args.component, common=args.common,

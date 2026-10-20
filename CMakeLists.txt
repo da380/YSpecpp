@@ -138,7 +138,7 @@ if(YSPEC_WITH_OPENMP)
 endif()
 
 # The programs, one for each kind of output.
-set(YSPEC_PROGRAMS yspec yspec-snapshot)
+set(YSPEC_PROGRAMS yspec yspec-snapshot yspec-kernels)
 foreach(program IN LISTS YSPEC_PROGRAMS)
   add_executable(${program} app/${program}.cpp)
   target_link_libraries(${program} PRIVATE YSpec::YSpec)

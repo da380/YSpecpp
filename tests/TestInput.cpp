@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <YSpec/Input.hpp>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -283,6 +284,71 @@ TEST(Input, ReadsForces) {
   } catch (const std::runtime_error& e) {
     EXPECT_NE(std::string(e.what()).find("force_N"), std::string::npos)
         << e.what();
+  }
+}
+
+TEST(Input, ReadsTheKernelExamples) {
+  const auto directory = fs::path(YSPEC_EXAMPLES_DIR) / "kernels";
+  const auto s = ReadKernelInput(directory / "s-wave.json");
+  EXPECT_EQ(s.prefix, directory / "s-wave");
+  EXPECT_EQ(s.component, "T");
+  EXPECT_DOUBLE_EQ(s.window.start, 1000);
+  EXPECT_DOUBLE_EQ(s.window.end, 1200);
+  EXPECT_DOUBLE_EQ(s.window.taper, 40);
+  EXPECT_EQ(s.parameters, ParameterSet::Velocities);
+  EXPECT_EQ(s.scaling, Scaling::Relative);
+  EXPECT_EQ(s.calculation.quantity, Quantity::Velocity);
+  // The transverse direction is horizontal and of unit length.
+  EXPECT_DOUBLE_EQ(s.direction.up, 0);
+  EXPECT_NEAR(std::hypot(s.direction.north, s.direction.east), 1, 1e-12);
+  const auto rayleigh = ReadKernelInput(directory / "rayleigh.json");
+  EXPECT_EQ(rayleigh.component, "Z");
+  EXPECT_DOUBLE_EQ(rayleigh.direction.up, 1);
+}
+
+TEST(Input, RefusesFaultyKernels) {
+  const auto good = std::string(R"({
+  "model": "prem.200",
+  "output": { "prefix": "out" },
+  "degrees": { "max": 10 },
+  "frequencies_mHz": { "min": 0.2, "max": 10 },
+  "time_series": { "length_min": 30 },
+  "sources": [{ "depth_km": 10, "latitude": 0, "longitude": 0,
+    "moment_tensor_Nm": { "rr": 1, "rt": 0, "rp": 0, "tt": 0, "tp": 0,
+                          "pp": 0 } }],
+  "measurement": {
+    "receiver": { "depth_km": 3, "location": [0, 40] },
+    "component": "R",
+    "traveltime": { "window_s": [600, 900], "taper_s": 50 } },
+  "kernels": { "parameters": "anisotropic",
+               "mesh": { "order": 4, "max_element_km": 20 } }
+})");
+  const auto input = ReadKernelInput(Write("kernels.json", good));
+  EXPECT_EQ(input.parameters, ParameterSet::Anisotropic);
+  EXPECT_EQ(input.scaling, Scaling::Absolute);
+  EXPECT_EQ(input.mesh.order, 4);
+  EXPECT_DOUBLE_EQ(input.mesh.maxElement, 20e3);
+  // Radial, from a source on the equator to a receiver east along it.
+  EXPECT_NEAR(input.direction.east, 1, 1e-9);
+  EXPECT_NEAR(input.direction.north, 0, 1e-9);
+  for (const auto& [from, to] :
+       std::initializer_list<std::pair<std::string_view, std::string_view>>{
+           {R"("component": "R")", R"("component": "X")"},
+           {R"([600, 900])", R"([900, 600])"},
+           {R"([600, 900])", R"([600, 1900])"},
+           {R"("taper_s": 50)", R"("taper_s": 200)"},
+           {R"("location": [0, 40])", R"("distance_deg": 40)"},
+           {R"("anisotropic")", R"("elastic")"},
+           {R"("order": 4)", R"("order": 0)"},
+           {R"("traveltime")", R"("amplitude")"},
+           {R"("pp": 0 } }],)",
+            R"("pp": 0 } }, { "depth_km": 10, "latitude": 0, "longitude": 9,
+               "force_N": { "r": 1 } }],)"}}) {
+    auto text = good;
+    text.replace(text.find(from), from.size(), to);
+    EXPECT_THROW((void)ReadKernelInput(Write("kernels.json", text)),
+                 std::runtime_error)
+        << to;
   }
 }
 

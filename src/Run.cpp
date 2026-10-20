@@ -3,7 +3,10 @@
 #include <format>
 #include <fstream>
 #include <numbers>
+#include <span>
 #include <stdexcept>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "Geometry.hpp"
@@ -158,6 +161,109 @@ Snapshots RunSnapshots(const std::filesystem::path& path,
   auto snapshots = ComputeSnapshots(input, progress);
   WriteSnapshots(snapshots, input);
   return snapshots;
+}
+
+KernelResult ComputeKernels(const KernelInput& input,
+                            const Progress& progress) {
+  const auto model = Model::ReadDeck(input.model);
+  const auto& calculation = input.calculation;
+  auto seismogram =
+      ComputeSeismograms(model, calculation, std::span{&input.source, 1},
+                         std::span{&input.receiver, 1});
+  auto measurement = Traveltime(model, calculation, input.source,
+                                input.receiver, input.direction, input.window);
+  auto kernels = ComputeRadialKernels(model, calculation, input.source,
+                                      measurement, input.mesh, progress);
+  auto named = Reparameterise(kernels, model, input.parameters, input.scaling);
+  return {.seismogram = std::move(seismogram),
+          .measurement = std::move(measurement),
+          .kernels = std::move(kernels),
+          .named = std::move(named)};
+}
+
+void WriteKernels(const KernelResult& result, const KernelInput& input) {
+  const auto quantity = [&] {
+    switch (input.calculation.quantity) {
+      case Quantity::Displacement:
+        return "displacement";
+      case Quantity::Velocity:
+        return "velocity";
+      case Quantity::Acceleration:
+        return "acceleration";
+    }
+    return "";
+  }();
+  const auto& window = input.window;
+  const auto measured = std::format(
+      "the cross-correlation traveltime (s) of {} {} at the receiver, in a "
+      "window from {} s to {} s",
+      input.component, quantity, window.start, window.end);
+
+  auto open = [&](std::string_view suffix) {
+    auto path = input.prefix;
+    path += suffix;
+    auto file = std::ofstream(path);
+    if (!file) throw std::runtime_error("cannot write " + path.string());
+    return std::pair{std::move(file), path};
+  };
+
+  {
+    auto [file, path] = open(".measurement");
+    file << "# yspec-kernels: " << measured << "\n";
+    file << "# time_s seismogram window adjoint_source\n";
+    const auto& d = input.direction;
+    const auto& u = result.seismogram;
+    const auto& j = result.measurement.adjointSource;
+    for (auto n = std::size_t{0}; n < u.Samples(); ++n) {
+      const auto t = static_cast<double>(n) * u.TimeStep();
+      file << std::format("{:12.3f}{:15.6E}{:10.4f}{:15.6E}\n", t,
+                          d.up * u(0, 0, Vertical, n) +
+                              d.north * u(0, 0, North, n) +
+                              d.east * u(0, 0, East, n),
+                          window(t), j[n]);
+    }
+    if (!file) throw std::runtime_error("cannot write " + path.string());
+  }
+
+  auto [file, path] = open(".kernels");
+  const auto& named = result.named;
+  const auto relative = input.scaling == Scaling::Relative;
+  file << "# yspec-kernels: radial kernels of " << measured << "\n";
+  file << std::format(
+      "# dJ = integral of sum over X of K_X d{}X r^2 dr, plus sum over X of "
+      "P_X d{}X at the source; K in s m^-3{}, P in s{}\n",
+      relative ? "ln " : "", relative ? "ln " : "",
+      relative ? "" : " per unit of X", relative ? "" : " per unit of X");
+  file << std::format("# the point parts P_X at the source, at {:.3f} km:\n",
+                      result.kernels.SourceRadius() / 1e3);
+  file << "# at_source";
+  for (auto value : named.atSource) file << std::format(" {:.6E}", value);
+  file << "\n# radius_km depth_km weight_m3";
+  for (const auto& name : named.names) file << " " << name;
+  file << "\n";
+  const auto& kernels = result.kernels;
+  const auto surface = kernels.Radii().empty() ? 0.0 : [&] {
+    const auto model = Model::ReadDeck(input.model);
+    return model.SurfaceRadius() * model.GetScales().Length();
+  }();
+  for (auto i = std::size_t{0}; i < kernels.Size(); ++i) {
+    const auto r = kernels.Radii()[i];
+    file << std::format("{:15.6f}{:15.6f}{:15.6E}", r / 1e3,
+                        (surface - r) / 1e3, kernels.Weights()[i]);
+    for (const auto& values : named.values) {
+      file << std::format("{:15.6E}", values[i]);
+    }
+    file << "\n";
+  }
+  if (!file) throw std::runtime_error("cannot write " + path.string());
+}
+
+KernelResult RunKernels(const std::filesystem::path& path,
+                        const Progress& progress) {
+  const auto input = ReadKernelInput(path);
+  auto result = ComputeKernels(input, progress);
+  WriteKernels(result, input);
+  return result;
 }
 
 }  // namespace YSpec

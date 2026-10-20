@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <YSpec/Run.hpp>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <numbers>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -147,6 +149,70 @@ TEST(Run, WritesASnapshotFilePerTime) {
   file >> row[0] >> row[1] >> row[2] >> row[3] >> row[4];
   EXPECT_DOUBLE_EQ(row[3], 10);
   EXPECT_DOUBLE_EQ(row[4], 20);
+}
+
+TEST(Run, WritesKernelsAndTheirMeasurement) {
+  const auto directory = fs::temp_directory_path() / "yspec-run-kernel-test";
+  fs::remove_all(directory);
+  fs::create_directories(directory);
+  fs::copy_file(fs::path(YSPEC_EXAMPLES_DIR) / "prem.200",
+                directory / "prem.200");
+  std::ofstream(directory / "input.json") << R"({
+  "model": "prem.200",
+  "output": { "prefix": "out", "quantity": "velocity" },
+  "degrees": { "max": 20 },
+  "frequencies_mHz": { "min": 0.2, "max": 4 },
+  "time_series": { "length_min": 30, "time_step_s": 30 },
+  "sources": [
+    { "depth_km": 30, "latitude": 0, "longitude": 0,
+      "moment_tensor_Nm": { "rr": 1e18, "rt": 0, "rp": 0, "tt": 0, "tp": 0,
+                            "pp": 0 } }
+  ],
+  "measurement": {
+    "receiver": { "depth_km": 3, "distance_deg": 30, "azimuth_deg": 45 },
+    "component": "Z",
+    "traveltime": { "window_s": [400, 1000], "taper_s": 100 } },
+  "kernels": { "parameters": "moduli", "scaling": "relative",
+               "mesh": { "order": 3, "max_element_km": 200 } }
+})";
+  const auto result = RunKernels(directory / "input.json");
+  EXPECT_EQ(result.named.names,
+            (std::vector<std::string>{"rho", "kappa", "mu", "qkappa", "qmu"}));
+  // The kernels: the header, then a line for each radius.
+  auto table = std::ifstream(directory / "out.kernels");
+  ASSERT_TRUE(table);
+  auto line = std::string{};
+  auto header = std::vector<std::string>{};
+  auto rows = std::size_t{0};
+  while (std::getline(table, line)) {
+    if (line.starts_with('#')) {
+      header.push_back(line);
+      continue;
+    }
+    auto row = std::istringstream(line);
+    auto values = std::array<double, 8>{};
+    for (auto& value : values) row >> value;
+    ASSERT_TRUE(row) << line;
+    EXPECT_NEAR(values[0] * 1e3, result.kernels.Radii()[rows], 1e-2);
+    EXPECT_NEAR(values[4], result.named.values[1][rows],
+                1e-5 * std::abs(result.named.values[1][rows]) + 1e-300);
+    ++rows;
+  }
+  EXPECT_EQ(rows, result.kernels.Size());
+  ASSERT_GE(header.size(), 2u);
+  EXPECT_EQ(header.back(),
+            "# radius_km depth_km weight_m3 rho kappa mu qkappa qmu");
+  EXPECT_TRUE(std::ranges::any_of(header, [](const std::string& h) {
+    return h.starts_with("# at_source ");
+  }));
+  // The measurement: a line for each sample.
+  auto measurement = std::ifstream(directory / "out.measurement");
+  ASSERT_TRUE(measurement);
+  auto samples = std::size_t{0};
+  while (std::getline(measurement, line)) {
+    if (!line.starts_with('#')) ++samples;
+  }
+  EXPECT_EQ(samples, result.seismogram.Samples());
 }
 
 }  // namespace

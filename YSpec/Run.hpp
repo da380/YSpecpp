@@ -9,6 +9,7 @@
 #include <filesystem>
 
 #include "Input.hpp"
+#include "Kernels.hpp"
 #include "Seismograms.hpp"
 #include "Snapshots.hpp"
 #include "Synthetics.hpp"
@@ -79,5 +80,41 @@ void WriteSnapshots(const Snapshots& snapshots, const SnapshotInput& input);
  */
 Snapshots RunSnapshots(const std::filesystem::path& path,
                        const Progress& progress = {});
+
+/** @brief What the yspec-kernels program computes. */
+struct KernelResult {
+  Seismograms seismogram;   ///< The seismogram at the receiver.
+  Measurement measurement;  ///< The traveltime, by its adjoint source.
+  RadialKernels kernels;    ///< Its kernels in the model's parameters.
+  NamedKernels named;       ///< And in those asked for.
+};
+
+/**
+ * @brief Reads the model an input names and computes the kernels of its
+ * traveltime.
+ * @param input The calculation.
+ * @param progress Called as frequencies of the kernels are completed.
+ */
+KernelResult ComputeKernels(const KernelInput& input,
+                            const Progress& progress = {});
+
+/**
+ * @brief Writes the kernels and the measurement as text: `prefix.kernels`,
+ * whose header gives the measurement, the units and the point parts at the
+ * source (on a line beginning `# at_source`), and whose lines give the
+ * radius and depth (km), the weight (m^3) and each kernel, in the order of
+ * the column names on the last line of the header; and `prefix.measurement`,
+ * whose lines give the time (s), the seismogram measured, the window and the
+ * adjoint source.
+ * @throws std::runtime_error if a file cannot be written.
+ */
+void WriteKernels(const KernelResult& result, const KernelInput& input);
+
+/**
+ * @brief Reads an input file, computes the kernels it describes and writes
+ * them.
+ */
+KernelResult RunKernels(const std::filesystem::path& path,
+                        const Progress& progress = {});
 
 }  // namespace YSpec

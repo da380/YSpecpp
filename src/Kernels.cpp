@@ -30,9 +30,35 @@ double Window::operator()(double t) const {
   return std::min(rise(t - start), rise(end - t));
 }
 
+Direction Along(Component component) {
+  switch (component) {
+    case Vertical:
+      return {.up = 1, .north = 0, .east = 0};
+    case North:
+      return {.up = 0, .north = 1, .east = 0};
+    case East:
+      return {.up = 0, .north = 0, .east = 1};
+  }
+  return {};
+}
+
+// The azimuth of the source seen from the receiver is 2 pi less the angle
+// that turns the components there; radial is opposite it, and transverse a
+// quarter turn anticlockwise from radial.
+Direction RadialDirection(const Location& source, const Location& receiver) {
+  const auto back = 2 * std::numbers::pi - Geometry(receiver, source).rotation;
+  return {.up = 0, .north = -std::cos(back), .east = -std::sin(back)};
+}
+
+Direction TransverseDirection(const Location& source,
+                              const Location& receiver) {
+  const auto back = 2 * std::numbers::pi - Geometry(receiver, source).rotation;
+  return {.up = 0, .north = -std::sin(back), .east = std::cos(back)};
+}
+
 Measurement Traveltime(const Model& model, const Calculation& calculation,
                        const Source& source, const Receiver& receiver,
-                       Component component, const Window& window) {
+                       const Direction& direction, const Window& window) {
   const auto& scales = model.GetScales();
   const auto spectra = SeismogramSpectra(
       model, calculation, std::span{&source, 1}, std::span{&receiver, 1});
@@ -41,15 +67,17 @@ Measurement Traveltime(const Model& model, const Calculation& calculation,
   // the complex frequency: the damping is undone after the transform.
   auto rate = std::vector<Complex>(grid.Count());
   for (auto k : std::views::iota(std::size_t{0}, grid.Count())) {
-    rate[k] = TimesI(grid.Omega(k)) *
-              spectra(0, 0, static_cast<std::size_t>(component), k);
+    const auto measured = direction.up * spectra(0, 0, Vertical, k) +
+                          direction.north * spectra(0, 0, North, k) +
+                          direction.east * spectra(0, 0, East, k);
+    rate[k] = TimesI(grid.Omega(k)) * measured;
   }
   const auto series =
       InverseTransform(grid, MakeTaper(calculation, scales), rate, 1);
   const auto unit = Unit(scales, calculation.quantity) / scales.Time();
   const auto dt = calculation.sampling.timeStep;
   auto measurement = Measurement{
-      .receiver = receiver, .component = component, .adjointSource = {}};
+      .receiver = receiver, .direction = direction, .adjointSource = {}};
   auto& j = measurement.adjointSource;
   auto norm = 0.0;
   for (auto n : std::views::iota(std::size_t{0},
@@ -359,20 +387,15 @@ void Scale(SourceWeights& weights, Complex factor) {
   for (auto& w : weights.radial) w *= factor;
 }
 
-// The unit force along a component at the receiver, in (r, theta, phi) of
-// the frame with the source at the pole.
-Force Direction(Component component, double rotation) {
+// A force along a direction at the receiver, in (r, theta, phi) of the frame
+// with the source at the pole, where the angle given turns (theta, phi) to
+// (south, east).
+Force InSourceFrame(const Direction& direction, double rotation) {
   const auto c = std::cos(rotation);
   const auto s = std::sin(rotation);
-  switch (component) {
-    case Vertical:
-      return {.r = 1, .t = 0, .p = 0};
-    case North:
-      return {.r = 0, .t = -c, .p = s};
-    case East:
-      return {.r = 0, .t = s, .p = c};
-  }
-  return {};
+  return {.r = direction.up,
+          .t = -c * direction.north + s * direction.east,
+          .p = s * direction.north + c * direction.east};
 }
 
 }  // namespace
@@ -441,7 +464,8 @@ RadialKernels ComputeRadialKernels(const Model& model,
   // functions there that place the adjoint field's force.
   const auto geometry =
       Geometry(measurement.receiver.location, source.location);
-  const auto direction = Direction(measurement.component, geometry.rotation);
+  const auto direction =
+      InSourceFrame(measurement.direction, geometry.rotation);
   const auto spin = SpinFunctions(degrees.max, {geometry.distance});
 
   // The spectrum of the adjoint field's force, A_k = w_k R_k sum_n j(t_n)
@@ -614,6 +638,136 @@ RadialKernels ComputeRadialKernels(const Model& model,
     kernels.AtSource(p) = at.r * at.r * totalAtSource[parameter] / scale;
   }
   return kernels;
+}
+
+namespace {
+
+// The model at a radius (m), in SI units, as the reparameterisation needs it.
+struct ModelValues {
+  double rho, A, C, F, L, N, kappa, mu, qA, qF, qMu, qKappa;
+};
+
+ModelValues ValuesAt(const Model& model, double r) {
+  const auto& scales = model.GetScales();
+  const auto x = r / scales.Length();
+  const auto m = model(model.LayerIndex(x), x);
+  const auto modulus = scales.Modulus();
+  return {.rho = m.rho * scales.Density(),
+          .A = m.A * modulus,
+          .C = m.C * modulus,
+          .F = m.F * modulus,
+          .L = m.L * modulus,
+          .N = m.N * modulus,
+          .kappa = m.kappa * modulus,
+          .mu = m.mu * modulus,
+          .qA = m.qA,
+          .qF = m.qF,
+          .qMu = m.qMu,
+          .qKappa = m.qKappa};
+}
+
+// The names of a set of parameters.
+std::vector<std::string> Names(ParameterSet set) {
+  switch (set) {
+    case ParameterSet::Love:
+      return {"rho", "A", "C", "F", "L", "N", "qA", "qF", "qmu"};
+    case ParameterSet::Moduli:
+      return {"rho", "kappa", "mu", "qkappa", "qmu"};
+    case ParameterSet::Velocities:
+      return {"rho", "vp", "vs", "qkappa", "qmu"};
+    case ParameterSet::Anisotropic:
+      return {"rho", "vpv", "vph", "vsv", "vsh", "eta", "qkappa", "qmu"};
+  }
+  return {};
+}
+
+// The kernels of a set of parameters at a point, and the parameters, from
+// those of the model's own.
+std::pair<std::vector<double>, std::vector<double>> Transform(
+    const std::array<double, static_cast<std::size_t>(RadialParameter::Count)>&
+        k,
+    const ModelValues& v, ParameterSet set) {
+  using P = RadialParameter;
+  auto K = [&](P p) { return k[static_cast<std::size_t>(p)]; };
+  const auto rho = K(P::Rho);
+  const auto A = K(P::A);
+  const auto C = K(P::C);
+  const auto F = K(P::F);
+  const auto L = K(P::L);
+  const auto N = K(P::N);
+  // Minos's effective inverse quality factors, qA = (1 - x) qkappa + x qmu
+  // and qF = ((1 - x) qkappa - x qmu / 2) / (1 - 3x/2), with x = 4 mu /
+  // (3 kappa + 4 mu), at fixed moduli.
+  const auto x = 4 * v.mu / (3 * v.kappa + 4 * v.mu);
+  const auto qKappa = (1 - x) * K(P::QA) + (1 - x) / (1 - 1.5 * x) * K(P::QF);
+  const auto qMu =
+      K(P::QMu) + x * K(P::QA) - 0.5 * x / (1 - 1.5 * x) * K(P::QF);
+  // The Voigt averages perturbed isotropically.
+  const auto kappa = A + C + F;
+  const auto mu = 4.0 / 3 * (A + C) - 2.0 / 3 * F + L + N;
+  switch (set) {
+    case ParameterSet::Love:
+      return {{rho, A, C, F, L, N, K(P::QA), K(P::QF), K(P::QMu)},
+              {v.rho, v.A, v.C, v.F, v.L, v.N, v.qA, v.qF, v.qMu}};
+    case ParameterSet::Moduli:
+      return {{rho, kappa, mu, qKappa, qMu},
+              {v.rho, v.kappa, v.mu, v.qKappa, v.qMu}};
+    case ParameterSet::Velocities: {
+      const auto vp = std::sqrt((v.kappa + 4 * v.mu / 3) / v.rho);
+      const auto vs = std::sqrt(v.mu / v.rho);
+      return {
+          {rho + (v.kappa * kappa + v.mu * mu) / v.rho, 2 * v.rho * vp * kappa,
+           2 * v.rho * vs * (mu - 4.0 / 3 * kappa), qKappa, qMu},
+          {v.rho, vp, vs, v.qKappa, v.qMu}};
+    }
+    case ParameterSet::Anisotropic: {
+      const auto vpv = std::sqrt(v.C / v.rho);
+      const auto vph = std::sqrt(v.A / v.rho);
+      const auto vsv = std::sqrt(v.L / v.rho);
+      const auto vsh = std::sqrt(v.N / v.rho);
+      const auto eta = v.F / (v.A - 2 * v.L);
+      return {{rho + (v.A * A + v.C * C + v.F * F + v.L * L + v.N * N) / v.rho,
+               2 * v.rho * vpv * C, 2 * v.rho * vph * (A + eta * F),
+               2 * v.rho * vsv * (L - 2 * eta * F), 2 * v.rho * vsh * N,
+               (v.A - 2 * v.L) * F, qKappa, qMu},
+              {v.rho, vpv, vph, vsv, vsh, eta, v.qKappa, v.qMu}};
+    }
+  }
+  return {};
+}
+
+}  // namespace
+
+NamedKernels Reparameterise(const RadialKernels& kernels, const Model& model,
+                            ParameterSet set, Scaling scaling) {
+  constexpr auto parameters = static_cast<std::size_t>(RadialParameter::Count);
+  auto result = NamedKernels{.names = Names(set), .values = {}, .atSource = {}};
+  const auto count = result.names.size();
+  result.values.assign(count, std::vector<double>(kernels.Size()));
+  auto transformed = [&](auto kernel, double r) {
+    auto k = std::array<double, parameters>{};
+    for (auto p : std::views::iota(std::size_t{0}, parameters)) {
+      k[p] = kernel(static_cast<RadialParameter>(p));
+    }
+    auto [values, parameter] = Transform(k, ValuesAt(model, r), set);
+    if (scaling == Scaling::Relative) {
+      for (auto j : std::views::iota(std::size_t{0}, count)) {
+        values[j] *= parameter[j];
+      }
+    }
+    return values;
+  };
+  for (auto i : std::views::iota(std::size_t{0}, kernels.Size())) {
+    const auto values = transformed(
+        [&](RadialParameter p) { return kernels[p][i]; }, kernels.Radii()[i]);
+    for (auto j : std::views::iota(std::size_t{0}, count)) {
+      result.values[j][i] = values[j];
+    }
+  }
+  result.atSource =
+      transformed([&](RadialParameter p) { return kernels.AtSource(p); },
+                  kernels.SourceRadius());
+  return result;
 }
 
 }  // namespace YSpec

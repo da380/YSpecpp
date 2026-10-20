@@ -154,3 +154,38 @@ class SnapshotRun:
         """One component at one time, (depth, azimuth, distance)."""
         shape = (len(self.depths), len(self.azimuths), len(self.distances))
         return self._data[time_index][:, self.COLUMNS[component]].reshape(shape)
+
+
+class KernelRun:
+    """A run of yspec-kernels: the measurement and its radial kernels."""
+
+    def __init__(self, path):
+        self.path = pathlib.Path(path)
+        self.input = json.loads(self.path.read_text())
+        output = self.input["output"]
+        prefix = self.path.parent / output["prefix"]
+        self.quantity = output.get("quantity", "displacement")
+        self.model = self.path.parent / self.input["model"]
+        self.hypocentre = self.input["sources"][0]
+        measurement = self.input["measurement"]
+        self.component = measurement["component"]
+        self.window = measurement["traveltime"]["window_s"]
+        kernels = self.input.get("kernels", {})
+        self.relative = kernels.get("scaling", "absolute") == "relative"
+        self.time, self.seismogram, self.taper, self.adjoint = np.loadtxt(
+            prefix.with_name(prefix.name + ".measurement")).T
+        file = prefix.with_name(prefix.name + ".kernels")
+        header = [line for line in file.read_text().splitlines()
+                  if line.startswith("#")]
+        self.description = header[0].removeprefix("# yspec-kernels: ")
+        self.at_source = [float(v) for v in next(
+            line for line in header
+            if line.startswith("# at_source")).split()[2:]]
+        self.names = header[-1].split()[4:]
+        table = np.loadtxt(file)
+        self.radius, self.depth, self.weight = table[:, :3].T
+        self.kernels = {name: table[:, 3 + j]
+                        for j, name in enumerate(self.names)}
+        self.at_source = dict(zip(self.names, self.at_source))
+        self.source_radius = self.radius[-1] + self.depth[-1] - \
+            self.hypocentre["depth_km"]
