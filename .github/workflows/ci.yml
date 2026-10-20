@@ -39,8 +39,13 @@ jobs:
             -DYSPEC_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --parallel
+      # Debug leaves out the slow full-workflow tests (label slow): without
+      # optimisation they take tens of minutes, and their quick counterparts
+      # cover the same code.
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: >
+          ctest --test-dir build --output-on-failure
+          ${{ matrix.build_type == 'Debug' && '-LE slow' || '' }}
 
   # The serial build, which must give the same answers.
   serial:

@@ -304,7 +304,8 @@ TEST(VolumeKernels, AgreeWithTheAdjointFieldInTheSourcesFrame) {
         // jumps of P, S and T, impulsive, with the spectrum A.
         for (auto m = -l; m <= l; ++m) {
           const auto e = std::polar(1.0, -m * at.phi) / (rr * rr) * adjoint[k];
-          const auto xm = atReceiver[-1, 0][l][m];
+          // The views of spin 1 and -1 start at degree 1.
+          const auto xm = l > 0 ? atReceiver[-1, 0][l][m] : 0.0;
           const auto x0 = atReceiver[0, 0][l][m];
           const auto xp = l > 0 ? atReceiver[1, 0][l][m] : 0.0;
           const auto p = -rr * f.r * x0 * e;
