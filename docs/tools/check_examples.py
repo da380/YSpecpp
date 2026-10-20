@@ -48,9 +48,14 @@ def main():
     env = os.environ | {'OMP_NUM_THREADS': '2'}
     with tempfile.TemporaryDirectory(prefix='yspec-doc-examples-', dir=build) as temporary:
         work = Path(temporary)
-        for name in ('snapshot', 'workflows'):
+        fixtures = {
+            'snapshot': 'snapshot-small',
+            'workflows': 'workflows',
+            'first-seismogram': 'first-seismogram',
+        }
+        for name, fixture in fixtures.items():
             (work / name).mkdir()
-            shutil.copy2(ROOT / f'docs/site/examples/{"snapshot-small" if name == "snapshot" else "workflows"}.json', work / name / 'input.json')
+            shutil.copy2(ROOT / f'docs/site/examples/{fixture}.json', work / name / 'input.json')
             shutil.copy2(ROOT / 'examples/prem.200', work / name / 'prem.200')
         shutil.copy2(ROOT / 'docs/site/examples/station.pz', work / 'workflows/station.pz')
         run([build / 'bin/yspec-snapshot', work / 'snapshot/input.json'], env)
@@ -58,6 +63,21 @@ def main():
         rows = finite_rows(snapshot, 8, skip=2)
         if len(rows) != 4:
             raise RuntimeError(f'{snapshot}: expected four grid rows, got {len(rows)}')
+        first_run = work / 'first-seismogram'
+        run([build / 'bin/yspec', first_run / 'input.json'], env)
+        first_trace = first_run / 'first-seismogram.out.1'
+        trace_files = sorted(first_run.glob('first-seismogram.out.*'))
+        if trace_files != [first_trace] or not first_trace.is_file():
+            raise RuntimeError('first-seismogram run did not create exactly first-seismogram.out.1')
+        rows = finite_rows(first_trace, 4)
+        if len(rows) != 91:
+            raise RuntimeError(f'{first_trace}: expected 91 time samples, got {len(rows)}')
+        times = [float(row.split()[0]) for row in rows]
+        if any(not math.isclose(time, 20.0 * index, rel_tol=0.0, abs_tol=1e-9)
+               for index, time in enumerate(times)):
+            raise RuntimeError(f'{first_trace}: expected times from 0 to 1800 s at 20 s intervals')
+        if not any(float(row.split()[1]) != 0.0 for row in rows):
+            raise RuntimeError(f'{first_trace}: expected a nonzero vertical displacement trace')
         run([build / 'bin/yspec', work / 'workflows/input.json'], env)
         traces = sorted((work / 'workflows').glob('multi.event-*.*'))
         expected = [work / 'workflows' / f'multi.{source}.{receiver}'
@@ -76,7 +96,7 @@ def main():
                    '-fopenmp', '-o', str(executable)]
         run(command)
         run([executable, ROOT / 'examples/prem.200'], env)
-    print('Checked snapshot, multi-source/profile/instrument traces and strain/kernel library consumer.')
+    print('Checked first-seismogram and snapshot fixtures, multi-source/profile/instrument traces and strain/kernel library consumer.')
     return 0
 
 
