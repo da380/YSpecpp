@@ -496,7 +496,7 @@ inline Vector<2> RadialStart(const Context& c, const ComplexMaterial& m,
 }
 
 /**
- * @brief The minors of the spheroidal starting solutions in a solid, with
+ * @brief The spheroidal starting solutions in a solid, with
  * full self-gravitation.
  *
  * @details The three solutions of a homogeneous self-gravitating sphere
@@ -504,7 +504,8 @@ inline Vector<2> RadialStart(const Context& c, const ComplexMaterial& m,
  * solve a quadratic in @f$k^2@f$, gravity coupling the P and S waves, and one
  * without spatial oscillation. @c f and @c h are theirs.
  */
-inline Vector<14> SolidStart6(const Context& c, const ComplexMaterial& m) {
+inline std::array<Vector<6>, 3> SolidStartSolutions6(const Context& c,
+                                                     const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto zeta = c.Zeta();
   const auto zeta2 = c.Zeta2();
@@ -543,15 +544,22 @@ inline Vector<14> SolidStart6(const Context& c, const ComplexMaterial& m) {
   y[2][4] = 2.0 * zeta * (l - 1) * m.mu / r;
   y[2][5] =
       0.25 * ((2 * l + 1) * omega2 - 8 * PiG * l * (l - 1) * rho / 3) / PiG;
+  return y;
+}
+
+/** @brief The minors of the solutions of SolidStartSolutions6. */
+inline Vector<14> SolidStart6(const Context& c, const ComplexMaterial& m) {
+  const auto y = SolidStartSolutions6(c, m);
   return Minors(y[0], y[1], y[2]);
 }
 
 /**
- * @brief The minors of the spheroidal starting solutions in a solid, without
+ * @brief The spheroidal starting solutions in a solid, without
  * gravity (used in the Cowling approximation too): a P and an S solution
  * (Takeuchi & Saito 1972).
  */
-inline Vector<5> SolidStart4(const Context& c, const ComplexMaterial& m) {
+inline std::array<Vector<4>, 2> SolidStartSolutions4(const Context& c,
+                                                     const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto zeta = c.Zeta();
   const auto omega2 = c.Omega2();
@@ -573,19 +581,26 @@ inline Vector<5> SolidStart4(const Context& c, const ComplexMaterial& m) {
     const auto kr2 = omega2 * r * r / beta2;
     const auto ratio = BesselRatio(c.Degree(), kr2);
     s[0] = -l * (l + 1);
-    s[1] = -zeta * (l + 1) + ratio;
+    s[1] = zeta * (ratio - (l + 1));
     s[2] = -2.0 * m.mu * (l * (l * l - 1) - l * (l + 1) * ratio) / r;
     s[3] = zeta * m.mu * (kr2 - 2.0 * (l * l - 1) - 2.0 * ratio) / r;
   }
+  return {p, s};
+}
+
+/** @brief The minors of the solutions of SolidStartSolutions4. */
+inline Vector<5> SolidStart4(const Context& c, const ComplexMaterial& m) {
+  const auto [p, s] = SolidStartSolutions4(c, m);
   return Minors(p, s);
 }
 
 /**
- * @brief The minors of the spheroidal starting solutions in a fluid, with
+ * @brief The spheroidal starting solutions in a fluid, with
  * full self-gravitation (Takeuchi & Saito 1972, whose @c gamma, @c f and
  * @c h these are).
  */
-inline Vector<5> FluidStart4(const Context& c, const ComplexMaterial& m) {
+inline std::array<Vector<4>, 2> FluidStartSolutions4(const Context& c,
+                                                     const ComplexMaterial& m) {
   const auto l = static_cast<double>(c.Degree());
   const auto zeta2 = c.Zeta2();
   const auto omega2 = c.Omega2();
@@ -604,6 +619,12 @@ inline Vector<5> FluidStart4(const Context& c, const ComplexMaterial& m) {
   const auto steady = Vector<4>{
       l, (omega2 - 4 * PiG * rho * l / 3) * r, 0.0,
       0.25 * ((2 * l + 1) * omega2 - 8 * PiG * l * (l - 1) * rho / 3) / PiG};
+  return {oscillating, steady};
+}
+
+/** @brief The minors of the solutions of FluidStartSolutions4. */
+inline Vector<5> FluidStart4(const Context& c, const ComplexMaterial& m) {
+  const auto [oscillating, steady] = FluidStartSolutions4(c, m);
   return Minors(oscillating, steady);
 }
 
@@ -753,6 +774,75 @@ inline Vector<6> Solution(const Vector<14>& m, const Vector<14>& b) {
          m[7] * (b[2] - b[7]) + m[8] * b[3] - m[10] * b[9] + m[11] * b[6] +
          m[13] * b[11];
   return y;
+}
+
+//----------------------------------------------------------------------------
+// The b-vector across a boundary between solid and fluid, and the consoidal
+// displacement in a fluid.
+//
+// The b-vector is the solution of the adjoint system that turns the minors
+// into the response. For the 4x4 systems it is a covector c, and with y1 and
+// y2 the solutions whose minors are integrated the response is
+// y = y1 (c.y2) - y2 (c.y1). For the 6x6 system it is a 2-form B, and with y1,
+// y2, y3 the solutions the response is the sum of y1 B(y2, y3) and its cyclic
+// permutations. Of its fifteen components the fourteen kept are, as the
+// formula of Solution shows, B01 = b0, B02 = b1, B04 = b3, B05 = b4,
+// B12 = b5, B13 = b6, B15 = b8, B23 = b9, B24 = b10, B34 = b11, B35 = b12 and
+// B45 = b13, while B03, B14 and B25 enter only through B14 - B25 = b2 + 2 b7
+// and B03 - B25 = 2 b2 + b7 (indices from zero, in the order of the 6x6
+// variables).
+//
+// At a boundary, FluidToSolid gives the minors of the fluid solutions, with
+// V = 0, together with the solution e_V that slips; SolidToFluid gives those
+// of the combinations of the solid solutions with S = 0. The response keeps
+// its continuous components and has S = 0 on the solid side, and so:
+//
+// - into a fluid, c_k = B(e_V, e_k) for each fluid variable k, and for the
+//   4x4 system the fluid's constant is c(e_V);
+// - into a solid, B(x, e_S) = -c.x for every x, and for the 4x4 system
+//   c = -b e_S, with b the fluid's constant.
+//----------------------------------------------------------------------------
+
+/** @brief The b-vector of the 4x4 system into the constant of the fluid. */
+inline Vector<1> BIntoFluid(const Vector<4>& b) { return {b[1]}; }
+
+/** @brief The constant of the fluid into the b-vector of the 4x4 system. */
+inline Vector<4> BIntoSolid(const Vector<1>& b) { return {0, 0, 0, -b[0]}; }
+
+/** @brief The b-vector of the 6x6 system into that of the fluid's 4x4. */
+inline Vector<4> BIntoFluid(const Vector<14>& b) {
+  return {-b[0], b[5], b[6], b[8]};
+}
+
+/** @brief The b-vector of the fluid's 4x4 system into that of the 6x6. */
+inline Vector<14> BIntoSolid(const Vector<4>& b) {
+  auto solid = Vector<14>{};
+  solid[3] = -b[0];
+  solid[10] = -b[1];
+  solid[11] = -b[2];
+  solid[13] = b[3];
+  return solid;
+}
+
+/**
+ * @brief The consoidal displacement in a fluid, @f$\zeta r V@f$, which is not
+ * a variable of the fluid's systems.
+ *
+ * @details In a fluid the tangential traction vanishes, and its equation,
+ * @f$0 = \zeta\rho g\,y_1/r - \omega^2\rho\,y_2 + \zeta\rho\,y_3/r - \zeta
+ * y_4/r@f$ in the variables of the 6x6 system, gives @f$y_2@f$.
+ * @param c The degree and frequency.
+ * @param m The material.
+ * @param rU The radial displacement, @f$y_1@f$.
+ * @param rPhi The potential, @f$y_3@f$, zero without self-gravitation.
+ * @param P The radial traction, @f$y_4@f$.
+ * @param gravity Whether the equilibrium gravity enters.
+ */
+inline Complex FluidConsoidal(const Context& c, const ComplexMaterial& m,
+                              Complex rU, Complex rPhi, Complex P,
+                              bool gravity) {
+  const auto g = gravity ? m.g : 0.0;
+  return c.Zeta() * (m.rho * (g * rU + rPhi) - P) / (c.Omega2() * m.rho * m.r);
 }
 
 }  // namespace YSpec

@@ -35,8 +35,8 @@ namespace YSpec {
  * @param sources The sources.
  * @param receivers The receivers.
  * @param progress Called as frequencies are completed, if given.
- * @throws std::invalid_argument if the calculation is inconsistent, or a
- * source and a receiver do not lie in the same solid region of the model.
+ * @throws std::invalid_argument if the calculation is inconsistent, or the
+ * sources do not lie in one solid region of the model.
  */
 Seismograms ComputeSeismograms(const Model& model,
                                const Calculation& calculation,

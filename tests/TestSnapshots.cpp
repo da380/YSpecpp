@@ -35,7 +35,9 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
   const auto sources = std::vector<Source>{
       {{10, 20}, 30e3, {.rr = 1e18, .rt = 2e18, .tp = -1e18}},
       {{-30, 100}, 200e3, {.rp = 1e18, .tt = 1e18, .pp = -1e18}}};
-  const auto grid = SnapshotGrid{.depths = {3e3, 400e3},
+  // On the sea surface, beneath the sea floor, in the mantle and in the
+  // outer core.
+  const auto grid = SnapshotGrid{.depths = {0, 3e3, 400e3, 4000e3},
                                  .distances = {0, 30, 75, 150},
                                  .azimuths = {40, 220}};
   const auto samples = std::vector<std::size_t>{10, 20, 30};
@@ -75,7 +77,7 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
     ASSERT_GT(peak, 0);
 
     auto k = s * points;
-    for (auto d : {0, 1}) {
+    for (auto d = std::size_t{0}; d < grid.depths.size(); ++d) {
       for (auto a : {0, 1}) {
         for (auto i : {0, 1, 2, 3}) {
           // The azimuth of the direction away from the source at the point.
@@ -122,9 +124,9 @@ TEST(Snapshots, RefuseWhatTheyCannotCompute) {
   };
   refuses(grid, {4000});
   refuses(grid, {});
-  auto core = grid;
-  core.depths = {3000e3};
-  refuses(core, times);
+  auto deep = grid;
+  deep.depths = {7000e3};
+  refuses(deep, times);
   auto far = grid;
   far.distances = {190};
   refuses(far, times);

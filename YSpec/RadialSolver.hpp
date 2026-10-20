@@ -5,21 +5,28 @@
  * @brief The responses at a set of receiver radii to unit jumps at a set of
  * source radii, for one degree and one complex frequency.
  *
- * @details The sources and the receivers lie in one solid region. For each
- * system a solution regular at the bottom (integrated upwards from a starting
- * level) and one satisfying the conditions at the top (integrated downwards
- * from the surface) are combined with the jump at each source, in the manner
- * of Friederich & Dalkolmo (1995) and Al-Attar & Woodhouse (2008).
+ * @details The sources lie in one solid region; the receivers may lie
+ * anywhere. For each system a solution regular at the bottom (integrated
+ * upwards from a starting level) and one satisfying the conditions at the top
+ * (integrated downwards from the surface) are combined with the jump at each
+ * source, in the manner of Friederich & Dalkolmo (1995) and Al-Attar &
+ * Woodhouse (2008).
  *
  * The integration starts at the deepest point at which the solution can
  * matter: below the turning point of the slowest wave at the given degree and
- * frequency the solution decays, and the WKB estimate of that decay is
- * accumulated downwards until it reaches a given number of e-folds.
+ * frequency, beneath the deepest source, the solution decays, and the WKB
+ * estimate of that decay is accumulated downwards until it reaches a given
+ * number of e-folds. The response at a receiver below the start is taken to
+ * be zero, to the same accuracy.
  *
  * Integrations restart at every discontinuity of the model, and the systems
  * change from solid to fluid form and back wherever the phase does, so a fluid
  * inner core, an ocean, or any other sequence of solid and fluid regions needs
- * no special treatment.
+ * no special treatment. The b-vectors that carry the source out to the
+ * receivers change form with them, so a receiver may be in another region
+ * from the source: in an ocean, or in the core. The toroidal response is zero
+ * outside the solid region of the sources, and in a fluid the consoidal
+ * displacement follows from the vanishing of the tangential traction.
  *
  * The solver works in the model's non-dimensional units. The jumps at the
  * source are unit jumps in the solution vector of the original YSpec, whose
@@ -132,10 +139,10 @@ class RadialSolver {
    * @param gravity How gravity enters.
    * @param attenuation Whether to include attenuation.
    * @param options Integration settings.
-   * @throws std::invalid_argument unless every source and receiver lies in
-   * one solid region, or if the options are out of range. A source or
-   * receiver on a boundary between solid and fluid is taken to be on the
-   * solid side.
+   * @throws std::invalid_argument unless every source lies in one solid
+   * region, if a source or receiver is at the centre, or if the options are
+   * out of range. A source or receiver on a boundary between solid and fluid
+   * is taken to be on the solid side.
    */
   RadialSolver(const Model& model, std::vector<double> sourceRadii,
                std::vector<double> receiverRadii, Gravity gravity,

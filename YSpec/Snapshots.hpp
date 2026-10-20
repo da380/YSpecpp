@@ -18,8 +18,8 @@
  * snapshot at the time of a sample of a seismogram at the same point holds
  * that sample.
  *
- * For now the points, like the receivers of seismograms, must lie in the solid
- * region of the model that holds the sources.
+ * The points may lie anywhere but at the centre: in the core, or in an
+ * ocean, as well as in the solid region of the sources.
  */
 
 #include <cstddef>
@@ -110,7 +110,7 @@ class Snapshots {
  * @param times The times after the origin (s), between zero and the duration.
  * @param progress Called as frequencies are completed, if given.
  * @throws std::invalid_argument if the grid is empty or out of range, a time
- * is out of range, or a depth lies outside the solid region of the sources.
+ * is out of range, or the sources do not lie in one solid region.
  */
 Snapshots ComputeSnapshots(const Model& model, const Calculation& calculation,
                            std::span<const Source> sources,

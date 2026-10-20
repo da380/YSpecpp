@@ -88,13 +88,13 @@ TEST(Synthetics, GiveEachSourceWhatItGivesAlone) {
       {{20, 30}, 30e3, kMoment},
       {{-40, 120}, 30e3, MomentTensor{.rr = 2e18, .tp = 1e18}},
       {{0, 0}, 200e3, MomentTensor{.rt = 1e18, .pp = -1e18}}};
-  // The receiver at the surface is in the ocean, so leave it to one side.
-  const auto solid = std::span{receivers}.first(2);
-  const auto together = ComputeSeismograms(model, calculation, sources, solid);
+  // The receiver at the surface is in the ocean.
+  const auto together =
+      ComputeSeismograms(model, calculation, sources, receivers);
   for (auto s : {0, 1, 2}) {
     const auto alone = ComputeSeismograms(model, calculation,
-                                          std::span{&sources[s], 1}, solid);
-    for (auto k : {0, 1}) {
+                                          std::span{&sources[s], 1}, receivers);
+    for (auto k : {0, 1, 2}) {
       for (auto c : {Vertical, North, East}) {
         const auto peak = Peak(alone, 0, k, c);
         for (auto i = std::size_t{0}; i < alone.Samples(); ++i) {
@@ -103,8 +103,18 @@ TEST(Synthetics, GiveEachSourceWhatItGivesAlone) {
       }
     }
   }
-  EXPECT_THROW((void)ComputeSeismograms(model, calculation, sources, receivers),
-               std::invalid_argument);
+}
+
+TEST(Synthetics, RefuseASourceInAFluid) {
+  const auto model = Model::ReadDeck(kPrem);
+  const auto receivers = std::vector<Receiver>{{{10, 10}, 3e3}};
+  for (auto depth : {1e3, 3000e3}) {
+    const auto source = Source{{0, 0}, depth, kMoment};
+    EXPECT_THROW((void)ComputeSeismograms(model, Small(), std::span{&source, 1},
+                                          receivers),
+                 std::invalid_argument)
+        << depth;
+  }
 }
 
 TEST(Synthetics, ServeReceiversAtSeveralDepthsTogether) {

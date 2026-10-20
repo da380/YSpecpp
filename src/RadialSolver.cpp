@@ -40,6 +40,9 @@ struct WithoutPotential {
   static constexpr std::size_t SolidSize = 5;  // second-order minors
   static constexpr std::size_t FluidSize = 2;  // the solution itself
   static constexpr std::size_t BSize = 4;
+  // In a fluid the b-vector is a constant, which needs no integration.
+  static constexpr std::size_t FluidBSize = 1;
+  static constexpr bool IntegrateFluidB = false;
   // The sign of the response above the source.
   static constexpr double SignAbove = 1;
 
@@ -75,6 +78,16 @@ struct WithoutPotential {
   static std::array<Complex, 4> Components(const Vector<4>& y) {
     return {y[0], y[1], Complex{}, Complex{}};
   }
+  // The same in a fluid, from the solution and the constant.
+  static std::array<Complex, 4> FluidComponents(const Vector<2>& solution,
+                                                const Vector<1>& b,
+                                                const Context& c,
+                                                const ComplexMaterial& m) {
+    const auto rU = solution[0] * b[0];
+    const auto P = solution[1] * b[0];
+    return {rU, FluidConsoidal(c, m, rU, 0.0, P, Cowling), Complex{},
+            Complex{}};
+  }
 };
 
 // With self-gravitation: 6x6 in a solid, 4x4 in a fluid.
@@ -82,6 +95,8 @@ struct WithPotential {
   static constexpr std::size_t SolidSize = 14;  // third-order minors
   static constexpr std::size_t FluidSize = 5;   // second-order minors
   static constexpr std::size_t BSize = 14;
+  static constexpr std::size_t FluidBSize = 4;
+  static constexpr bool IntegrateFluidB = true;
   static constexpr double SignAbove = -1;
 
   static Block6 SolidBlock(const Context& c, const ComplexMaterial& m) {
@@ -118,6 +133,14 @@ struct WithPotential {
   static std::array<Complex, 4> Components(const Vector<6>& y) {
     return {y[0], y[1], y[2], y[5]};
   }
+  // The same in a fluid, whose variables are (U, phi, P, psi).
+  static std::array<Complex, 4> FluidComponents(const Vector<5>& minors,
+                                                const Vector<4>& b,
+                                                const Context& c,
+                                                const ComplexMaterial& m) {
+    const auto y = Solution(minors, b);
+    return {y[0], FluidConsoidal(c, m, y[0], y[1], y[2], true), y[1], y[3]};
+  }
 };
 
 // Minors carried through regions of either phase.
@@ -135,6 +158,29 @@ struct Minors {
     } else {
       solid = {FluidToSolid(fluid.value), fluid.logScale};
       solid.Normalise();
+    }
+    inFluid = toFluid;
+  }
+};
+
+// The b-vectors of the four unit jumps, carried through regions of either
+// phase.
+template <class Form>
+struct BVectors {
+  std::array<ScaledVector<Form::BSize>, 4> solid;
+  std::array<ScaledVector<Form::FluidBSize>, 4> fluid;
+  bool inFluid = false;
+
+  void ChangePhase(bool toFluid) {
+    if (toFluid == inFluid) return;
+    for (auto j : {0, 1, 2, 3}) {
+      if (toFluid) {
+        fluid[j] = {BIntoFluid(solid[j].value), solid[j].logScale};
+        fluid[j].Normalise();
+      } else {
+        solid[j] = {BIntoSolid(fluid[j].value), fluid[j].logScale};
+        solid[j].Normalise();
+      }
     }
     inFluid = toFluid;
   }
@@ -174,8 +220,20 @@ class RadialSolver::Impl {
     if (sourceRadii.empty() || receiverRadii.empty()) {
       throw std::invalid_argument("there must be a source and a receiver");
     }
-    for (auto r : sourceRadii) sources_.push_back(SolidSide(model, r));
-    for (auto r : receiverRadii) receivers_.push_back(SolidSide(model, r));
+    for (auto r : sourceRadii) {
+      if (!(r > 0)) {
+        throw std::invalid_argument(
+            "a source at the centre of the model is not supported");
+      }
+      sources_.push_back(SolidSide(model, r));
+    }
+    for (auto r : receiverRadii) {
+      if (!(r > 0)) {
+        throw std::invalid_argument(
+            "a receiver at the centre of the model is not supported");
+      }
+      receivers_.push_back(SolidSide(model, r));
+    }
 
     region_ = model.RegionIndex(sources_.front().layer);
     for (const auto& source : sources_) {
@@ -185,18 +243,10 @@ class RadialSolver::Impl {
             "be in a solid");
       }
     }
-    for (const auto& receiver : receivers_) {
-      if (model.GetLayer(receiver.layer).IsFluid()) {
+    for (const auto& source : sources_) {
+      if (model.RegionIndex(source.layer) != region_) {
         throw std::invalid_argument(
-            "a receiver is in a fluid region of the model (an ocean?); it "
-            "must be in a solid");
-      }
-    }
-    for (const auto& point : All()) {
-      if (model.RegionIndex(point.point.layer) != region_) {
-        throw std::invalid_argument(
-            "the sources and the receivers must lie in one solid region of "
-            "the model");
+            "the sources must lie in one solid region of the model");
       }
     }
     for (const auto& layer : model.Layers()) {
@@ -225,14 +275,6 @@ class RadialSolver::Impl {
       all.push_back({sources_.size() + i, receivers_[i]});
     }
     return all;
-  }
-
-  // The deepest of the sources and receivers.
-  Point Lowest() const {
-    const auto all = All();
-    return std::ranges::min(all, {},
-                            [](const Stop& stop) { return stop.point.r; })
-        .point;
   }
 
   Point StartPoint(int l, double omega, Point top, Int lowestRegion) const {
@@ -289,12 +331,15 @@ class RadialSolver::Impl {
   }
 
   // A start at the centre is moved off it, since the starting solutions
-  // divide by the radius.
-  Point OffCentre(Point start, Complex omega, double& step) const {
+  // divide by the radius, though not above the lowest point wanted: the
+  // solutions are integrated up from the start.
+  Point OffCentre(Point start, Point lowest, Complex omega,
+                  double& step) const {
     step = FirstStep(start.layer, omega);
     if (start.r > 0) return start;
     const auto knots = model_->GetLayer(start.layer).Knots();
-    return {start.layer, std::min(0.1 * step, 0.1 * knots[1])};
+    return {start.layer,
+            std::min({0.1 * step, 0.1 * knots[1], 0.5 * lowest.r})};
   }
 
   // Calls integrate(layer, begin, end, step) for each layer from one point
@@ -366,11 +411,11 @@ namespace {
 // The systems.
 //
 // Each gives: the State it integrates and how (Integrate), where and how the
-// integrations from below and from above start (FromBelow, FromAbove), the
-// determinant at a source, the b-vectors that carry a unit jump at a source
-// out to the receivers above and below it (whether they need integrating,
-// and how), and the components of the solution formed from a state and a
-// b-vector.
+// integrations from below and from above start (FromBelow, FromAbove), which
+// points it reaches (Reaches), the determinant at a source, the b-vectors
+// that carry the unit jumps at a source out to the receivers (StartBs, and
+// IntegrateBs if they need integrating), and the components of the response
+// formed from a state and the b-vectors at a receiver (Solution).
 //----------------------------------------------------------------------------
 
 // What the 2x2 systems share. The solution from above is itself the response
@@ -378,7 +423,7 @@ namespace {
 // is a constant: the Wronskian of the solution at the source with the jump.
 struct TwoByTwo {
   using State = ScaledVector<2>;
-  using B = ScaledVector<1>;
+  using Bs = std::array<ScaledVector<1>, 2>;
   static constexpr int Jumps = 2;
   static constexpr std::size_t Components = 2;
   static constexpr bool IntegrateB = false;
@@ -389,18 +434,25 @@ struct TwoByTwo {
     return {above.value[1] * below.value[0] - above.value[0] * below.value[1],
             below.logScale + above.logScale};
   }
-  // For a jump (1, 0) or (0, 1) at the source.
-  static B BAbove(const State& below, int jump) {
-    return {{jump == 0 ? below.value[1] : -below.value[0]}, below.logScale};
+  // For the jumps (1, 0) and (0, 1) at the source, with the solution there
+  // from the other side; the same above the source and below it.
+  static Bs StartBs(const State& atSource, bool) {
+    auto bs = Bs{ScaledVector<1>{{atSource.value[1]}, atSource.logScale},
+                 ScaledVector<1>{{-atSource.value[0]}, atSource.logScale}};
+    for (auto& b : bs) b.Normalise();
+    return bs;
   }
-  static B BBelow(const State& above, int jump) { return BAbove(above, jump); }
-  static ScaledVector<2> Solution(const State& state, const B& b) {
+  static void IntegrateBs(Bs&, Int, double, double, double&) {}
+  static ScaledVector<2> Solution(const State& state, const Bs& bs, int jump,
+                                  Point) {
+    const auto& b = bs[jump];
     return {{state.value[0] * b.value[0], state.value[1] * b.value[0]},
             state.logScale + b.logScale};
   }
 };
 
-// The toroidal system, confined to the solid region of the sources.
+// The toroidal system, confined to the solid region of the sources: elsewhere
+// the response is zero.
 template <class Solver>
 class ToroidalSystem : public TwoByTwo {
  public:
@@ -417,17 +469,26 @@ class ToroidalSystem : public TwoByTwo {
         begin, end, state, step);
   }
 
-  // From a starting level in the region, or from its bottom, where a fluid
+  bool Reaches(Point point) const {
+    return solver_.GetModel().RegionIndex(point.layer) ==
+           solver_.SourceRegionIndex();
+  }
+
+  // A starting level in the region, below the deepest source.
+  Point StartLevel(Point top) const {
+    return solver_.StartPoint(context_.Degree(), context_.Omega().real(), top,
+                              solver_.SourceRegionIndex());
+  }
+
+  // From the starting level, or from the bottom of the region, where a fluid
   // below leaves no traction.
-  std::pair<Point, State> FromBelow(Point lowest, double& step) const {
+  std::pair<Point, State> FromBelow(Point start, Point lowest,
+                                    double& step) const {
     const auto& region = solver_.SourceRegion();
-    const auto start =
-        solver_.StartPoint(context_.Degree(), context_.Omega().real(), lowest,
-                           solver_.SourceRegionIndex());
     if (start.r == region.lower && region.lower > 0) {
       return {start, State{{1.0, 0.0}}};
     }
-    const auto point = solver_.OffCentre(start, context_.Omega(), step);
+    const auto point = solver_.OffCentre(start, lowest, context_.Omega(), step);
     auto state = State{ToroidalStart(context_, context_(point.layer, point.r))};
     state.Normalise();
     return {point, state};
@@ -439,14 +500,13 @@ class ToroidalSystem : public TwoByTwo {
     return {Point{region.last, region.upper}, State{{1.0, 0.0}}};
   }
 
-  void IntegrateBs(std::array<B, Jumps>&, Int, double, double, double&) const {}
-
  private:
   const Solver& solver_;
   const Context& context_;
 };
 
-// The radial (l = 0) system, through the whole model.
+// The radial (l = 0) system, through the whole model: in a fluid it is the
+// same system with no rigidity, and nothing slips at a boundary.
 template <class Solver>
 class RadialSystem : public TwoByTwo {
  public:
@@ -467,11 +527,15 @@ class RadialSystem : public TwoByTwo {
         begin, end, state, step);
   }
 
+  static bool Reaches(Point) { return true; }
+
   // From the centre.
-  std::pair<Point, State> FromBelow(Point, double& step) const {
-    const auto& model = solver_.GetModel();
-    const auto point = solver_.OffCentre(Point{0, model.InnerRadius()},
-                                         context_.Omega(), step);
+  Point StartLevel(Point) const {
+    return {0, solver_.GetModel().InnerRadius()};
+  }
+  std::pair<Point, State> FromBelow(Point start, Point lowest,
+                                    double& step) const {
+    const auto point = solver_.OffCentre(start, lowest, context_.Omega(), step);
     auto state =
         State{RadialStart(context_, context_(point.layer, point.r), gravity_)};
     state.Normalise();
@@ -485,20 +549,19 @@ class RadialSystem : public TwoByTwo {
             State{{1.0, 0.0}}};
   }
 
-  void IntegrateBs(std::array<B, Jumps>&, Int, double, double, double&) const {}
-
  private:
   const Solver& solver_;
   const Context& context_;
   bool gravity_;
 };
 
-// The spheroidal systems, integrated as minors through the whole model.
+// The spheroidal systems, integrated as minors through the whole model, with
+// the b-vectors carried through it too.
 template <class Form, class Solver>
 class SpheroidalSystem {
  public:
   using State = Minors<Form>;
-  using B = ScaledVector<Form::BSize>;
+  using Bs = BVectors<Form>;
   static constexpr int Jumps = 4;
   static constexpr std::size_t Components = 4;
   static constexpr bool IntegrateB = true;
@@ -511,7 +574,7 @@ class SpheroidalSystem {
   void Integrate(State& minors, Int layer, double begin, double end,
                  double& step) const {
     const auto& context = context_;
-    minors.ChangePhase(solver_.GetModel().GetLayer(layer).IsFluid());
+    minors.ChangePhase(IsFluid(layer));
     if (minors.inFluid) {
       solver_.Integrator().Integrate(
           [&context, layer](double r, const Vector<Form::FluidSize>& y) {
@@ -529,14 +592,21 @@ class SpheroidalSystem {
     }
   }
 
-  // From a starting level anywhere below the deepest point wanted.
-  std::pair<Point, State> FromBelow(Point lowest, double& step) const {
-    const auto start = solver_.StartPoint(context_.Degree(),
-                                          context_.Omega().real(), lowest, 0);
-    const auto point = solver_.OffCentre(start, context_.Omega(), step);
+  static bool Reaches(Point) { return true; }
+
+  // A starting level anywhere below the deepest source.
+  Point StartLevel(Point top) const {
+    return solver_.StartPoint(context_.Degree(), context_.Omega().real(), top,
+                              0);
+  }
+
+  // From the starting level.
+  std::pair<Point, State> FromBelow(Point start, Point lowest,
+                                    double& step) const {
+    const auto point = solver_.OffCentre(start, lowest, context_.Omega(), step);
     const auto material = context_(point.layer, point.r);
     auto minors = State{};
-    minors.inFluid = solver_.GetModel().GetLayer(point.layer).IsFluid();
+    minors.inFluid = IsFluid(point.layer);
     if (minors.inFluid) {
       minors.fluid.value = Form::FluidStart(context_, material);
       minors.fluid.Normalise();
@@ -552,43 +622,73 @@ class SpheroidalSystem {
     const auto& model = solver_.GetModel();
     const auto top = model.NumberOfLayers() - 1;
     auto minors = State{};
-    minors.inFluid = model.GetLayer(top).IsFluid();
+    minors.inFluid = IsFluid(top);
     minors.fluid.value[0] = 1;
     minors.solid.value[0] = 1;
     return {Point{top, model.SurfaceRadius()}, minors};
   }
 
+  // The sources are in a solid.
   static ScaledComplex Determinant(const State& below, const State& above) {
     return {SecularDeterminant(below.solid.value, above.solid.value),
             below.solid.logScale + above.solid.logScale};
   }
 
-  static B BAbove(const State& below, int jump) {
-    return {Form::BVector(below.solid.value, Form::Jump(jump)),
-            below.solid.logScale};
-  }
-  static B BBelow(const State& above, int jump) {
-    return {Form::BVector(above.solid.value, Form::Jump(jump)),
-            above.solid.logScale};
+  // For the four unit jumps at the source, with the minors there from the
+  // other side; the same formula above the source and below it.
+  static Bs StartBs(const State& atSource, bool) {
+    auto bs = Bs{};
+    for (auto j : {0, 1, 2, 3}) {
+      bs.solid[j] = {Form::BVector(atSource.solid.value, Form::Jump(j)),
+                     atSource.solid.logScale};
+      bs.solid[j].Normalise();
+    }
+    return bs;
   }
 
-  // The four b-vectors together: their coefficients are the same.
-  void IntegrateBs(std::array<B, Jumps>& bVectors, Int layer, double begin,
-                   double end, double& step) const {
+  // The four b-vectors together: their coefficients are the same. In a fluid
+  // without self-gravitation they are constants.
+  void IntegrateBs(Bs& bs, Int layer, double begin, double end,
+                   double& step) const {
     const auto& context = context_;
-    solver_.Integrator().IntegrateTogether(
-        [&context, layer](double r, const Vectors<Form::BSize, Jumps>& b) {
-          const auto block = Form::SolidBlock(context, context(layer, r));
-          auto derivatives = Vectors<Form::BSize, Jumps>{};
-          for (auto j = std::size_t{0}; j < Jumps; ++j) {
-            derivatives[j] = BDerivative(block, b[j]);
-          }
-          return derivatives;
-        },
-        begin, end, bVectors, step);
+    bs.ChangePhase(IsFluid(layer));
+    if (!bs.inFluid) {
+      solver_.Integrator().IntegrateTogether(
+          [&context, layer](double r, const Vectors<Form::BSize, Jumps>& b) {
+            const auto block = Form::SolidBlock(context, context(layer, r));
+            auto derivatives = Vectors<Form::BSize, Jumps>{};
+            for (auto j = std::size_t{0}; j < Jumps; ++j) {
+              derivatives[j] = BDerivative(block, b[j]);
+            }
+            return derivatives;
+          },
+          begin, end, bs.solid, step);
+    } else if constexpr (Form::IntegrateFluidB) {
+      solver_.Integrator().IntegrateTogether(
+          [&context, layer](double r,
+                            const Vectors<Form::FluidBSize, Jumps>& b) {
+            const auto block = Form::FluidBlock(context, context(layer, r));
+            auto derivatives = Vectors<Form::FluidBSize, Jumps>{};
+            for (auto j = std::size_t{0}; j < Jumps; ++j) {
+              derivatives[j] = BDerivative(block, b[j]);
+            }
+            return derivatives;
+          },
+          begin, end, bs.fluid, step);
+    }
   }
 
-  static ScaledVector<4> Solution(const State& minors, const B& b) {
+  // At a receiver the minors and the b-vectors are in the same phase.
+  ScaledVector<4> Solution(const State& minors, const Bs& bs, int jump,
+                           Point point) const {
+    if (minors.inFluid) {
+      const auto& b = bs.fluid[jump];
+      const auto y =
+          Form::FluidComponents(minors.fluid.value, b.value, context_,
+                                context_(point.layer, point.r));
+      return {{y[0], y[1], y[2], y[3]}, minors.fluid.logScale + b.logScale};
+    }
+    const auto& b = bs.solid[jump];
     const auto y =
         Form::Components(YSpec::Solution(minors.solid.value, b.value));
     return {{y[0], y[1], y[2], y[3]}, minors.solid.logScale + b.logScale};
@@ -597,6 +697,10 @@ class SpheroidalSystem {
  private:
   const Solver& solver_;
   const Context& context_;
+
+  bool IsFluid(Int layer) const {
+    return solver_.GetModel().GetLayer(layer).IsFluid();
+  }
 };
 
 }  // namespace
@@ -604,7 +708,7 @@ class SpheroidalSystem {
 template <class System>
 auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
   using State = typename System::State;
-  using B = typename System::B;
+  using Bs = typename System::Bs;
   constexpr auto jumps = System::Jumps;
   using Raw =
       std::array<std::array<Complex, System::Components>, System::Jumps>;
@@ -614,9 +718,21 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
   const auto lowestSource = std::ranges::min(sources_, {}, &Point::r);
   const auto highestSource = std::ranges::max(sources_, {}, &Point::r);
 
+  // The points the system reaches: the responses elsewhere are zero, as they
+  // are, to the accuracy of the start, below the level at which the solution
+  // from below starts.
+  const auto start = system.StartLevel(lowestSource);
+  auto reached = std::vector<Stop>{};
+  for (const auto& stop : all) {
+    if (system.Reaches(stop.point) && stop.point.r >= start.r) {
+      reached.push_back(stop);
+    }
+  }
+  const auto lowest = std::ranges::min(reached, {}, byRadius).point;
+
   auto stopsWhere = [&](auto&& keep, bool ascending) {
     auto stops = std::vector<Stop>{};
-    for (const auto& stop : all) {
+    for (const auto& stop : reached) {
       if (keep(stop.point.r)) stops.push_back(stop);
     }
     std::ranges::stable_sort(stops, {}, byRadius);
@@ -635,9 +751,9 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
     const auto stops =
         stopsWhere([&](double r) { return r <= highestSource.r; }, true);
     auto step = 0.0;
-    auto [start, state] = system.FromBelow(Lowest(), step);
+    auto [first, state] = system.FromBelow(start, lowest, step);
     WalkKeeping(
-        start, highestSource, stops, state, step, omega, integrate,
+        first, highestSource, stops, state, step, omega, integrate,
         [&](std::size_t slot, const State& state) { fromBelow[slot] = state; });
   }
 
@@ -667,16 +783,11 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
       const auto& atSource = above ? fromBelow[source] : fromAbove[source];
       const auto& states = above ? fromAbove : fromBelow;
       const auto sign = above ? System::SignAbove : System::SignBelow;
-      auto bVectors = std::array<B, jumps>{};
-      for (auto j : std::views::iota(0, jumps)) {
-        bVectors[j] =
-            above ? System::BAbove(atSource, j) : System::BBelow(atSource, j);
-        bVectors[j].Normalise();
-      }
-      auto form = [&](std::size_t slot, const std::array<B, jumps>& b) {
+      auto bs = System::StartBs(atSource, above);
+      auto form = [&](std::size_t slot, const Bs& b) {
         auto& raw = responses(source, slot - sourceCount);
         for (auto j : std::views::iota(0, jumps)) {
-          const auto y = System::Solution(states[slot], b[j]);
+          const auto y = system.Solution(states[slot], b, j, all[slot].point);
           const auto scale = ScaledComplex{sign, y.logScale} / determinant;
           for (auto i : std::views::iota(std::size_t{0}, System::Components)) {
             raw[j][i] = Rescale(y.value[i] * scale.value, scale.logScale);
@@ -686,19 +797,20 @@ auto RadialSolver::Impl::Solve(const System& system, Complex omega) const {
       if constexpr (System::IntegrateB) {
         auto step = 0.0;
         WalkKeeping(
-            point, receivers.back().point, receivers, bVectors, step, omega,
-            [&system](std::array<B, jumps>& b, Int layer, double begin,
-                      double end, double& step) {
+            point, receivers.back().point, receivers, bs, step, omega,
+            [&system](Bs& b, Int layer, double begin, double end,
+                      double& step) {
               system.IntegrateBs(b, layer, begin, end, step);
             },
             form);
       } else {
-        for (const auto& receiver : receivers) form(receiver.slot, bVectors);
+        for (const auto& receiver : receivers) form(receiver.slot, bs);
       }
     };
 
     // Receivers at the radius of the source count as above it.
-    auto receivers = std::vector<Stop>(all.begin() + sourceCount, all.end());
+    auto receivers =
+        std::vector<Stop>(reached.begin() + sourceCount, reached.end());
     std::ranges::stable_sort(receivers, {}, byRadius);
     const auto split = std::ranges::partition_point(
         receivers, [&](const Stop& stop) { return stop.point.r < point.r; });

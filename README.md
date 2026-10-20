@@ -106,9 +106,10 @@ The calculation is read from a JSON file:
   share the radial solves, so extra ones cost little. The optional `name`
   labels the output files when there are several sources (by default the
   sources are numbered from 1).
-- `receivers`: a group of receivers, or an array of groups (see below). The
-  sources and the receivers must lie in the same solid region of the model:
-  in `prem.200`, below its 3 km ocean.
+- `receivers`: a group of receivers, or an array of groups (see below). They
+  may lie anywhere but at the centre: in the solid region of the sources, in
+  an ocean or in the core. The sources must lie in one solid region of the
+  model: in `prem.200`, below its 3 km ocean and above the core.
 - `solver.tolerance`: the local error allowed per integration step, relative
   to the size of the solution (default `1e-5`; see below), and
   `solver.start_decay`, the decay in e-folds below a turning point at which an
@@ -161,8 +162,8 @@ azimuths at it (clockwise from north). Each of the four is one number, an
 array of them, or a range of `count` values from `min` to `max`, both
 included. Two azimuths 180 degrees apart give a cross-section through the
 source along a great circle; one depth and many azimuths, a map around it.
-For now the points must lie in the solid region that holds the source (in
-PREM, between the sea floor and the core-mantle boundary).
+The points may lie anywhere but at the centre, through the oceans and the
+core as well as the solid region of the sources.
 
 One file is written for each time, `<prefix>.1`, `<prefix>.2`, ... (or
 `<prefix>.<source>.1`, ... with several sources). After two comment lines,
@@ -177,8 +178,13 @@ excited, so each depth and distance needs five sums over degree, which any
 number of azimuths then share. The values at each time are summed directly
 from the spectra, and agree with the samples of seismograms at the same
 points to rounding error. The example above, at degrees to 300 and up to 15
-mHz, takes about 9 s on 4 threads, nearly all of it in the radial
-integrations through the mantle.
+mHz, takes about 3 s on 4 threads, and the same section through the whole
+earth, from the sea surface to near the centre, about 4 s.
+
+With gravity, the free surface of an ocean carries surface-gravity waves
+(tsunamis), which are slow and outlast most time series: on and near the sea
+surface they can wrap around in time, and appear early. A longer time series,
+or points below the sea surface, avoid that.
 
 ## Accuracy and speed
 
@@ -220,9 +226,12 @@ afterwards, through the weights of the jumps and the angular functions.
   three treatments of gravity and any sequence of regions. The integrations
   from below and from above are shared by every source and receiver depth:
   each is kept as it passes them, and each source then needs only its own
-  determinant and the b-vectors carried out to the receivers. Integration
-  starts where a WKB estimate says the solution has decayed by e^-11 below its
-  turning point, from starting values for a homogeneous sphere.
+  determinant and the b-vectors carried out to the receivers, which change
+  form with the minors at each boundary between solid and fluid, so that a
+  receiver may be in an ocean or the core. Integration starts where a WKB
+  estimate says the solution has decayed by e^-11 below its turning point,
+  beneath the deepest source, from starting values for a homogeneous sphere;
+  below that start the response is negligible and is taken to be zero.
 - **Integration** (`src/RungeKutta.hpp`). A Dormand-Prince 5(4) method
   with step-size control, restarted at every discontinuity. Solutions are
   carried with a running logarithmic scale, since they grow and decay by far
@@ -268,9 +277,9 @@ const auto seismograms =
 const auto z = seismograms.Trace(0, 0, YSpec::Vertical);
 ```
 
-Sources and receivers may be at any depths in one solid region of the model
-(below an ocean, for instance, and above the core). The radial integrations
-are shared by all of them: several sources, or receivers at several depths,
+Sources may be at any depths in one solid region of the model (below an
+ocean, for instance, and above the core), and receivers anywhere but at the
+centre. The radial integrations are shared by all of them: several sources, or receivers at several depths,
 cost little more than one. A receiver may carry an `Instrument`, read from a
 SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
 gives lines of receivers along great circles.
@@ -300,6 +309,14 @@ for one degree and frequency.
   correction includes the gravity-flux term that the original omits; it
   vanishes at a free surface but not at a buried receiver (about 1e-3 of the
   peak acceleration on the sea floor).
+- Receivers, and the points of snapshots, may be anywhere: in an ocean, in the
+  outer core or in the inner core, as well as in the solid region of the
+  sources. Their responses agree with direct shooting to 1e-8.
+- Without self-gravitation and in the Cowling approximation, the starting
+  solution of the S type lacked a factor of zeta on the Bessel-function term
+  of its tangential displacement. Its error decays upwards from the start, so
+  it only mattered for receivers near the start, which the original could not
+  have.
 - Degrees above 1827 are allowed: the angular functions are then tabulated in
   long double.
 
@@ -308,9 +325,10 @@ for one degree and frequency.
 `ctest --test-dir build` runs unit tests; comparisons of the solvers with the
 Fortran's for single degrees and frequencies over a range of models and
 options; checks independent of the Fortran (the normal modes of PREM, the
-toroidal modes of a homogeneous sphere against their closed form, continuity
-at the epicentre); and four end-to-end cases compared with the Fortran's
-seismograms.
+toroidal modes of a homogeneous sphere against their closed form, responses
+in the oceans and the core against direct shooting of the solutions,
+continuity at the epicentre, snapshots against seismograms); and four
+end-to-end cases compared with the Fortran's seismograms.
 The scripts in `tests/fortran` regenerate the reference data from a checkout
 of the Fortran YSpec.
 
