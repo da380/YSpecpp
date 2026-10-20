@@ -40,7 +40,8 @@ Scalar BesselRatio(int l, Scalar z) {
   constexpr auto tolerance = 4 * std::numeric_limits<Real>::epsilon();
   constexpr auto tiny = std::numeric_limits<Real>::min() * 1e10;
 
-  // The denominator 2l+3 - z/(2l+5 - z/(2l+7 - ...)).
+  // The denominator 2l+3 - z/(2l+5 - z/(2l+7 - ...)), with f, c and d as in
+  // Lentz's method: the approximant and its two running ratios.
   auto f = Scalar(2 * l + 3);
   auto c = f;
   auto d = Scalar(0);

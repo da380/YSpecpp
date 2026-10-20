@@ -15,17 +15,17 @@
  * of the original YSpec.
  */
 
-#include <FFTWpp/Ranges>
+#include <YSpec/Calculation.hpp>
+#include <YSpec/Types.hpp>
 #include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <numbers>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <vector>
-
-#include "RungeKutta.hpp"
 
 namespace YSpec {
 
@@ -103,80 +103,29 @@ class FrequencyGrid {
   std::size_t last_ = 0;
 };
 
-/**
- * @brief A taper that is a raised cosine from zero at @c f1 to one at @c f2,
- * one to @c f3, and a raised cosine back to zero at @c f4. All four zero
- * means no filter.
- */
-struct CosineFilter {
-  double f1 = 0;  ///< Where the taper starts to rise.
-  double f2 = 0;  ///< Where it reaches one.
-  double f3 = 0;  ///< Where it starts to fall.
-  double f4 = 0;  ///< Where it reaches zero.
-
-  /** @brief The taper at a frequency. */
-  double operator()(double f) const {
-    if (f1 == 0 && f2 == 0 && f3 == 0 && f4 == 0) return 1;
-    constexpr auto pi = std::numbers::pi;
-    if (f < f1) return 0;
-    if (f < f2) return 0.5 * (1 - std::cos(pi * (f - f1) / (f2 - f1)));
-    if (f < f3) return 1;
-    if (f < f4) return 0.5 * (1 - std::cos(pi * (f4 - f) / (f4 - f3)));
-    return 0;
-  }
-};
+/** @brief The value of a taper at a frequency, in the taper's units. */
+inline double TaperValue(const Taper& t, double f) {
+  constexpr auto pi = std::numbers::pi;
+  if (f < t.f1) return 0;
+  if (f < t.f2) return 0.5 * (1 - std::cos(pi * (f - t.f1) / (t.f2 - t.f1)));
+  if (f < t.f3) return 1;
+  if (f < t.f4) return 0.5 * (1 - std::cos(pi * (t.f4 - f) / (t.f4 - t.f3)));
+  return 0;
+}
 
 /**
- * @brief Transforms spectra to damped-corrected time series.
+ * @brief Transforms spectra to time series, with the damping undone.
  * @param grid The frequency grid.
- * @param filter The taper applied to the spectra.
+ * @param taper A taper applied to the spectra, in the grid's units, if any.
  * @param spectra The spectra, @p count of them one after another, each
  * holding the grid's computed frequencies in order.
  * @param count The number of spectra.
  * @return The time series, one after another, each of grid.Samples()
- * samples, with the damping undone.
+ * samples.
  */
-inline std::vector<double> InverseTransform(const FrequencyGrid& grid,
-                                            const CosineFilter& filter,
-                                            const std::vector<Complex>& spectra,
-                                            std::size_t count) {
-  using namespace FFTWpp;
-  const auto nt = static_cast<int>(grid.Samples());
-  const auto nh = nt / 2 + 1;
-  const auto nf = grid.Count();
-  if (spectra.size() != count * nf) {
-    throw std::invalid_argument("InverseTransform: spectra of the wrong size");
-  }
-  const auto howMany = static_cast<int>(count);
-  const auto complexLayout =
-      Ranges::Layout(1, std::vector{nh}, howMany, std::vector{nh}, 1, nh);
-  const auto realLayout =
-      Ranges::Layout(1, std::vector{nt}, howMany, std::vector{nt}, 1, nt);
-  auto in = FFTWpp::vector<Complex>(complexLayout.size());
-  auto out = FFTWpp::vector<double>(realLayout.size());
-  auto plan = Ranges::Plan(Ranges::View(in, complexLayout),
-                           Ranges::View(out, realLayout), Estimate);
-
-  // Frequencies above the Nyquist frequency are dropped.
-  const auto last = std::min<std::size_t>(grid.Last(), nh - 1);
-  for (auto k : std::views::iota(std::size_t{0}, count)) {
-    for (auto i = grid.First(); i <= last; ++i) {
-      const auto f = static_cast<double>(i) * grid.Spacing();
-      in[k * nh + i] = filter(f) * spectra[k * nf + (i - grid.First())];
-    }
-  }
-  plan.Execute();
-
-  // The sum approximates the inverse Fourier integral with spacing df, and
-  // the damping is undone.
-  const auto dt = grid.TimeStep();
-  const auto df = grid.Spacing();
-  for (auto k : std::views::iota(std::size_t{0}, count)) {
-    for (auto i : std::views::iota(0, nt)) {
-      out[k * nt + i] *= df * std::exp(grid.Damping() * i * dt);
-    }
-  }
-  return {out.begin(), out.end()};
-}
+std::vector<double> InverseTransform(const FrequencyGrid& grid,
+                                     const std::optional<Taper>& taper,
+                                     const std::vector<Complex>& spectra,
+                                     std::size_t count);
 
 }  // namespace YSpec

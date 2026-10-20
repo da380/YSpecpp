@@ -1,25 +1,30 @@
 // Synthetic seismograms from C++: the example in README.md, which the test
 // suite builds and runs.
 
-#include <YSpec/Synthetics.hpp>
+#include <YSpec/YSpec.hpp>
 #include <cmath>
 #include <iostream>
+#include <vector>
 
 int main() {
-  auto model = YSpec::Model::ReadDeck(YSPEC_EXAMPLES_DIR "/prem.200");
-  auto settings = YSpec::Settings{};
-  settings.lMax = 200;
-  settings.fMin = 0.2;  // mHz
-  settings.fMax = 15;
-  settings.length = 60;            // minutes
-  settings.timeStep = 20;          // seconds
-  settings.sourceDepth = 29.5;     // km
-  settings.receiverDepth = 3;      // km: the sea floor of this model
-  settings.moment = {.rr = 1e18};  // N m
-  settings.receivers = {{0, 30}, {0, 60}};
-  auto seismograms = YSpec::ComputeSeismograms(model, settings);
-  double z = seismograms(0, 0, 100);  // receiver 0, vertical, sample 100
+  const auto model = YSpec::Model::ReadDeck(YSPEC_EXAMPLES_DIR "/prem.200");
 
-  std::cout << "vertical displacement at 30 degrees, 2000 s: " << z << " m\n";
-  return std::isfinite(z) && z != 0 ? 0 : 1;
+  auto calculation = YSpec::Calculation{};
+  calculation.degrees = {.min = 0, .max = 200};
+  calculation.band = {.min = 0.2e-3, .max = 15e-3};           // Hz
+  calculation.sampling = {.duration = 3600, .timeStep = 20};  // s
+
+  const auto sources = std::vector<YSpec::Source>{
+      {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e18}}};
+  // At 3 km depth: the sea floor of this model.
+  const auto receivers = std::vector<YSpec::Receiver>{
+      {.location = {0, 30}, .depth = 3e3}, {.location = {0, 60}, .depth = 3e3}};
+
+  const auto seismograms =
+      YSpec::ComputeSeismograms(model, calculation, sources, receivers);
+  const auto z = seismograms.Trace(0, 0, YSpec::Vertical);
+
+  std::cout << "vertical displacement at 30 degrees, 2000 s: " << z[100]
+            << " m\n";
+  return std::isfinite(z[100]) && z[100] != 0 ? 0 : 1;
 }

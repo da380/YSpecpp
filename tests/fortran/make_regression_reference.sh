@@ -6,13 +6,16 @@
 #
 # The Fortran is exported at the given commit (default a3ae638, the cleaned
 # code) and changed in three ways, so that what is compared is the physics and
-# not the Fortran's known faults (see WORKLOG.md):
+# not the Fortran's known faults:
 #   - its step density is raised sixteen-fold (nw = 4 -> 64), so that it is
 #     accurate to about 1e-6 of the peak instead of 1e-3;
-#   - rad_derivs_ng no longer keeps the gravity term of rad_amat;
+#   - rad_derivs_ng no longer keeps the gravity term of rad_amat, which with
+#     gravity switched off left l = 0 with gravity;
 #   - rad_solver_ng starts its downward integration at the surface in both
-#     branches, not at the sea floor in one.
-# The inputs are converted to JSON with tools/legacy_to_json.py.
+#     branches; with the receiver below the source it started at the sea
+#     floor, leaving the ocean out at l = 0.
+# The inputs, tests/regression/*/input.json, are the JSON equivalents of the
+# Fortran's tests/*/input.txt and are kept by hand.
 set -euo pipefail
 yspec=$(realpath "$1")
 commit=${2:-a3ae638}
@@ -67,6 +70,5 @@ PY
   cp "$dir/input.txt" "$work/examples/$model" "$run/"
   (cd "$run" && ./../src/yspec input.txt > /dev/null)
   cp "$run"/out.* "$case/reference/"
-  python3 -I "$root/tools/legacy_to_json.py" "$dir/input.txt" > "$case/input.json"
   echo "$name: model $model, $(ls "$case/reference" | wc -l) receivers"
 done

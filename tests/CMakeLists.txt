@@ -14,26 +14,30 @@ set(YSPEC_TEST_DEFINITIONS
     YSPEC_EXAMPLES_DIR="${PROJECT_SOURCE_DIR}/examples"
     YSPEC_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
+# Tests of the internals, in src/, link YSpecInternal as well as the library.
 function(yspec_add_test name)
   add_executable(${name} ${name}.cpp)
-  target_link_libraries(${name} PRIVATE YSpec::YSpec GTest::gtest_main)
+  target_link_libraries(${name} PRIVATE YSpec::YSpec YSpecInternal
+                                        GTest::gtest_main)
   target_compile_definitions(${name} PRIVATE ${YSPEC_TEST_DEFINITIONS})
-  if(YSPEC_WARNINGS_AS_ERRORS)
-    target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
-  else()
-    target_compile_options(${name} PRIVATE -Wall -Wextra)
-  endif()
+  target_compile_options(${name} PRIVATE ${YSPEC_WARNINGS})
   gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
 endfunction()
 
 yspec_add_test(TestModel)
 yspec_add_test(TestNumerics)
 yspec_add_test(TestSolver)
+yspec_add_test(TestBoundaries)
 yspec_add_test(TestReceivers)
 yspec_add_test(TestInput)
+yspec_add_test(TestInstrument)
 yspec_add_test(TestNormalModes)
 yspec_add_test(TestHomogeneousSphere)
 yspec_add_test(TestSynthetics)
+yspec_add_test(TestStrain)
+yspec_add_test(TestKernels)
+yspec_add_test(TestSnapshots)
+yspec_add_test(TestRun)
 
 # End-to-end cases, compared with seismograms from the Fortran YSpec (made by
 # tests/fortran/make_regression_reference.sh). Differences are relative to the
@@ -69,5 +73,6 @@ yspec_add_case(radial_accel)
 # The example in README.md.
 add_executable(library_example ${PROJECT_SOURCE_DIR}/examples/library.cpp)
 target_link_libraries(library_example PRIVATE YSpec::YSpec)
+target_compile_options(library_example PRIVATE ${YSPEC_WARNINGS})
 target_compile_definitions(library_example PRIVATE ${YSPEC_TEST_DEFINITIONS})
 add_test(NAME example.library COMMAND library_example)

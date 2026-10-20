@@ -4,11 +4,10 @@
 
 #include <gtest/gtest.h>
 
-#include <YSpec/Solver.hpp>
+#include <YSpec/RadialSolver.hpp>
 #include <cmath>
 #include <functional>
 #include <numbers>
-#include <planetmodel/deck.hpp>
 #include <string>
 
 namespace {
@@ -27,8 +26,7 @@ Model HomogeneousSphere() {
   3185500. 5000. 8000. 4500. 1000. 500.
   6371000. 5000. 8000. 4500. 1000. 500.
 )");
-  const auto deck = planetmodel::ReadDeckText(text, planetmodel::MINEOS());
-  return Model(deck, 1.0, Scales{});
+  return Model::ReadDeckText(text);
 }
 
 // The first root above x0 of (l - 1) j_l(x) - x j_{l+1}(x), the condition
@@ -67,8 +65,8 @@ TEST(HomogeneousSphere, HasItsToroidalModesWhereTheBesselFunctionsSay) {
   const auto model = HomogeneousSphere();
   ASSERT_EQ(model.Regions().size(), 1u);
   const auto scales = model.GetScales();
-  const auto solver = RadialSolver<>(model, 1 - 100e3 / kRadius,
-                                     1 - 10e3 / kRadius, Gravity::None, false);
+  const auto solver = RadialSolver(model, 1 - 100e3 / kRadius,
+                                   1 - 10e3 / kRadius, Gravity::None, false);
   const auto toMHz = 1000 / scales.Time() / (2 * std::numbers::pi);
   for (auto l : {1, 2, 5}) {
     for (auto overtone : {0, 1}) {
@@ -81,7 +79,7 @@ TEST(HomogeneousSphere, HasItsToroidalModesWhereTheBesselFunctionsSay) {
       };
       const auto f = Peak(
           [&](double mHz) {
-            return std::abs(solver.Toroidal(l, omega(mHz))[0]);
+            return std::abs(solver.Toroidal(l, omega(mHz))(0, 0).W[0]);
           },
           0.97 * expected, 1.03 * expected, 300);
       EXPECT_NEAR(f / expected, 1, 1e-5)
@@ -94,24 +92,24 @@ TEST(HomogeneousSphere, StartsLowDegreesAtTheCentre) {
   // At low degree nothing decays enough above the centre, so the toroidal
   // integration starts there.
   const auto model = HomogeneousSphere();
-  const auto solver = RadialSolver<>(model, 0.9, 0.99, Gravity::Full);
+  const auto solver = RadialSolver(model, 0.9, 0.99, Gravity::Full);
   const auto omega = Complex(5.0, -0.1);
   EXPECT_EQ(solver.StartPoint(1, omega.real(), solver.Source(), 0).r, 0.0);
   for (auto l : {1, 2, 3}) {
-    const auto t = solver.Toroidal(l, omega);
-    EXPECT_TRUE(std::isfinite(std::abs(t[0])) && std::abs(t[0]) > 0);
-    const auto s = solver.Spheroidal(l, omega);
-    EXPECT_TRUE(std::isfinite(std::abs(s[0][0])) && std::abs(s[0][0]) > 0);
+    const auto t = solver.Toroidal(l, omega)(0, 0).W[0];
+    EXPECT_TRUE(std::isfinite(std::abs(t)) && std::abs(t) > 0);
+    const auto u = solver.Spheroidal(l, omega)(0, 0).U[0];
+    EXPECT_TRUE(std::isfinite(std::abs(u)) && std::abs(u) > 0);
   }
 }
 
 TEST(HomogeneousSphere, AllowsASourceInTheInnerCoreOfPrem) {
   const auto model =
       Model::ReadDeck(std::string(YSPEC_EXAMPLES_DIR) + "/prem.200");
-  const auto solver = RadialSolver<>(model, 0.1, 0.15, Gravity::Full);
+  const auto solver = RadialSolver(model, 0.1, 0.15, Gravity::Full);
   for (auto l : {1, 2, 10}) {
-    const auto t = solver.Toroidal(l, Complex(10.0, -0.5));
-    EXPECT_TRUE(std::isfinite(std::abs(t[1])));
+    const auto t = solver.Toroidal(l, Complex(10.0, -0.5))(0, 0);
+    EXPECT_TRUE(std::isfinite(std::abs(t.W[1])));
   }
 }
 

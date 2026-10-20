@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include <YSpec/Solver.hpp>
+#include <YSpec/RadialSolver.hpp>
 #include <cmath>
 #include <functional>
 #include <numbers>
@@ -43,7 +43,7 @@ class NormalModes : public testing::Test {
             -2 * std::numbers::pi * 2e-4 / scale};
   }
 
-  RadialSolver<> Solver(Gravity gravity) const {
+  RadialSolver Solver(Gravity gravity) const {
     return {model, surface - 0.005, surface - 0.001, gravity};
   }
 };
@@ -52,7 +52,7 @@ TEST_F(NormalModes, FindsTheFootballMode) {
   const auto solver = Solver(Gravity::Full);
   const auto f = Peak(
       [&](double mHz) {
-        return std::abs(solver.Spheroidal(2, Omega(mHz))[0][0]);
+        return std::abs(solver.Spheroidal(2, Omega(mHz))(0, 0).U[0]);
       },
       0.30, 0.32, 100);
   EXPECT_NEAR(f, 1000 / (53.9 * 60), 0.0005) << "0S2 at " << f << " mHz";
@@ -64,7 +64,7 @@ TEST_F(NormalModes, NeedsSelfGravitationForTheFootballMode) {
   const auto solver = Solver(Gravity::Cowling);
   const auto f = Peak(
       [&](double mHz) {
-        return std::abs(solver.Spheroidal(2, Omega(mHz))[0][0]);
+        return std::abs(solver.Spheroidal(2, Omega(mHz))(0, 0).U[0]);
       },
       0.25, 0.45, 400);
   EXPECT_GT(std::abs(f - 1000 / (53.9 * 60)), 0.005)
@@ -74,16 +74,20 @@ TEST_F(NormalModes, NeedsSelfGravitationForTheFootballMode) {
 TEST_F(NormalModes, FindsTheGravestToroidalMode) {
   const auto solver = Solver(Gravity::Full);
   const auto f = Peak(
-      [&](double mHz) { return std::abs(solver.Toroidal(2, Omega(mHz))[1]); },
+      [&](double mHz) {
+        return std::abs(solver.Toroidal(2, Omega(mHz))(0, 0).W[1]);
+      },
       0.37, 0.39, 100);
   EXPECT_NEAR(f, 1000 / (43.9 * 60), 0.0005) << "0T2 at " << f << " mHz";
 }
 
 TEST_F(NormalModes, FindsTheBreathingMode) {
   const auto solver = Solver(Gravity::Full);
-  const auto f =
-      Peak([&](double mHz) { return std::abs(solver.Radial(Omega(mHz))[0]); },
-           0.80, 0.83, 150);
+  const auto f = Peak(
+      [&](double mHz) {
+        return std::abs(solver.Radial(Omega(mHz))(0, 0).U[0]);
+      },
+      0.80, 0.83, 150);
   EXPECT_NEAR(f, 1000 / (20.5 * 60), 0.002) << "0S0 at " << f << " mHz";
 }
 

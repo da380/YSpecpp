@@ -40,14 +40,25 @@ version, which gives the same results.
 
 ## Running
 
+There is a program for each kind of output: `yspec` computes seismograms at
+receivers, and `yspec-snapshot` the wavefield at chosen times on a grid
+around each source. They read JSON files that share most of their members.
+
 ```sh
-build/bin/yspec examples/input.json
+cd build
+bin/yspec examples/input.json
+bin/yspec-snapshot examples/snapshot.json
 ```
 
-The number of threads is set with `OMP_NUM_THREADS`. One file is written per
-receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the receivers are
-listed. Each line holds the time after the origin time (s) and the vertical
-(up), north and east components, in SI units of the quantity asked for.
+The build copies the example inputs and models into `build/examples`, so the
+outputs are written there, beside their inputs, and not in the sources.
+
+The number of threads is set with `OMP_NUM_THREADS`. For `yspec`, one file is
+written per receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the
+receivers are listed; with several sources, one per source and receiver,
+`<prefix>.<source>.1`, .... Each line holds the time after the origin time (s)
+and the vertical (up), north and east components, in SI units of the quantity
+asked for, or in the units of the instrument's output where there is one.
 
 ### Input
 
@@ -67,11 +78,11 @@ The calculation is read from a JSON file:
   "frequencies_mHz": { "min": 0.2, "max": 40 },
   "time_series": { "length_min": 60, "time_step_s": 1.0 },
   "filter_mHz": [1.0, 5.0, 38, 40],
-  "source": {
-    "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
-    "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
-                          "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 }
-  },
+  "sources": [
+    { "name": "event", "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
+      "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
+                            "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 } }
+  ],
   "receivers": { "depth_km": 3, "locations": [[0, 4], [0, 6], [0, 8]] },
   "solver": { "tolerance": 1e-5 }
 }
@@ -89,22 +100,96 @@ The calculation is read from a JSON file:
 - `degrees`: the spherical harmonic degrees summed (`min` defaults to 0).
 - `frequencies_mHz`: the band computed; `time_series` the length of the
   seismograms and their sampling. The Nyquist frequency must lie above the
-  highest frequency.
+  highest frequency; without `time_step_s` the step is a quarter of the
+  shortest period.
 - `filter_mHz`: an optional raised-cosine taper, rising from zero to one
   between its first two corners and falling back between its last two.
-- `source`: the hypocentre (geographic latitude) and the moment tensor in
-  spherical coordinates at the source (r up, theta south, phi east), for a
-  step in moment at the origin time.
-- `receivers`: their depth (all receivers are at one depth) and locations as
-  `[latitude, longitude]` pairs. The source and the receivers must lie in the
-  same solid region of the model: in `prem.200`, below its 3 km ocean.
+- `sources`: one or more, each with its hypocentre (geographic latitude) and
+  its moment tensor `moment_tensor_Nm`, a point force `force_N` (members
+  `r`, `t`, `p`, each defaulting to zero), or both, in spherical coordinates
+  at the source (r up, theta south, phi east), as a step at the origin time.
+  Sources at one depth share the radial solves, so extra ones cost little. The optional `name`
+  labels the output files when there are several sources (by default the
+  sources are numbered from 1).
+- `receivers`: a group of receivers, or an array of groups (see below). They
+  may lie anywhere but at the centre: in the solid region of the sources, in
+  an ocean or in the core. The sources must lie in one solid region of the
+  model: in `prem.200`, below its 3 km ocean and above the core.
 - `solver.tolerance`: the local error allowed per integration step, relative
   to the size of the solution (default `1e-5`; see below), and
   `solver.start_decay`, the decay in e-folds below a turning point at which an
   integration starts (default 11).
 
 A member not listed here is an error, so that a misspelt one is not ignored.
-`tools/legacy_to_json.py` converts a parameter file of the Fortran YSpec.
+
+Each group of receivers has its depth, or several, and its places: either a
+list of `locations`, or a `profile` along a great circle, from one point `to`
+another or from a point at an azimuth (clockwise from north) between two
+distances, with `count` points equally spaced, both ends included:
+
+```json
+"receivers": [
+  { "depth_km": 3, "locations": [[34.95, -106.46]], "instrument": "ANMO.pz" },
+  { "depth_km": [3, 100, 200],
+    "profile": { "from": [36.87, 35.58], "azimuth_deg": 60,
+                 "distances_deg": [10, 90], "count": 41 } }
+]
+```
+
+Receivers are numbered group by group and, within a group, depth by depth,
+with every place at each depth. Profiles are great circles of the spherical
+model, so a profile that starts at a source has points at exactly the
+epicentral distances asked for. The optional `instrument` is a SAC pole-zero
+file, applied to every component at the group's receivers; its output (counts,
+for the files of the IRIS DMC) is then recorded. A comment `* INPUT UNIT : M`
+(or `M/S`, or `M/S**2`) in the file says what motion the instrument responds
+to, which is otherwise displacement, as in SAC; the conversion from the
+quantity computed is exact. The response is applied at the same complex
+frequencies as the rest of the calculation, which gives the exact causal
+response.
+
+### Snapshots
+
+`yspec-snapshot` reads the same members as `yspec`, except that its `output`
+has only `prefix` and `quantity`, and that `snapshots` replaces `receivers`:
+
+```json
+"snapshots": {
+  "times_s": [300, 600, 900, 1200],
+  "depths_km": { "min": 25, "max": 2875, "count": 58 },
+  "distances_deg": { "min": 0, "max": 180, "count": 181 },
+  "azimuths_deg": [30, 210]
+}
+```
+
+The grid is in the frame of each source: depths, distances from it and
+azimuths at it (clockwise from north). Each of the four is one number, an
+array of them, or a range of `count` values from `min` to `max`, both
+included. Two azimuths 180 degrees apart give a cross-section through the
+source along a great circle; one depth and many azimuths, a map around it.
+The points may lie anywhere but at the centre, through the oceans and the
+core as well as the solid region of the sources.
+
+One file is written for each time, `<prefix>.1`, `<prefix>.2`, ... (or
+`<prefix>.<source>.1`, ... with several sources). After two comment lines,
+each line holds a point: its depth (km), distance and azimuth (degrees), its
+latitude and longitude, and the up, away and transverse components, away
+being along the great circle from the source and transverse 90 degrees
+anticlockwise from it, seen from above.
+
+The cost grows with the numbers of depths and distances, while further
+azimuths cost almost nothing: around the source only orders |m| <= 2 are
+excited, so each depth and distance needs five sums over degree, which any
+number of azimuths then share. The values at each time are summed directly
+from the spectra, and agree with the samples of seismograms at the same
+points to rounding error. The example above, at degrees to 300 and up to 15
+mHz, takes about 3 s on 4 threads, and the same section through the whole
+earth, from the sea surface to near the centre, about 4 s.
+
+With gravity, the free surface of an ocean carries surface-gravity waves
+(tsunamis), which are slow and outlast most time series: on and near the sea
+surface they can wrap around in time, and appear early. A longer time series,
+or points below the sea surface, avoid that.
 
 ## Accuracy and speed
 
@@ -131,55 +216,108 @@ radius. The source is rotated to the north pole, where only orders |m| ≤ 2
 are excited; the moment tensor and the receivers enter only
 afterwards, through the weights of the jumps and the angular functions.
 
-- **Model** (`YSpec/Model.hpp`). The deck is read with planetmodel and made
-  non-dimensional. Each property is a natural cubic spline within each layer,
-  and gravity is the exact integral of the density spline.
-- **Equations** (`YSpec/Equations.hpp`). Toroidal and radial systems are
+- **Model** (`YSpec/Model.hpp`, `src/Model.cpp`). The deck is read with
+  planetmodel and made non-dimensional. Each property is a natural cubic
+  spline within each layer, and gravity is the exact integral of the density
+  spline.
+- **Equations** (`src/Equations.hpp`). Toroidal and radial systems are
   2x2. Spheroidal systems are 4x4 without self-gravitation and 6x6 with it,
   integrated as minor vectors (second-order minors of the 4x4 systems, the
   fourteen independent third-order minors of the 6x6), with the source carried
   to the receiver by the b-vector system. Solid and fluid regions have their
   own forms, joined at every boundary between them.
-- **Solver** (`YSpec/Solver.hpp`). One spheroidal solver serves all three
-  treatments of gravity and any sequence of regions. Integration starts where
-  a WKB estimate says the solution has decayed by e^-11 below its turning
-  point, from starting values for a homogeneous sphere.
-- **Integration** (`YSpec/RungeKutta.hpp`). A Dormand-Prince 5(4) method
+- **Solver** (`YSpec/RadialSolver.hpp`, `src/RadialSolver.cpp`). One
+  two-point solver serves the toroidal, radial and spheroidal systems, all
+  three treatments of gravity and any sequence of regions. The integrations
+  from below and from above are shared by every source and receiver depth:
+  each is kept as it passes them, and each source then needs only its own
+  determinant and the b-vectors carried out to the receivers, which change
+  form with the minors at each boundary between solid and fluid, so that a
+  receiver may be in an ocean or the core. Integration starts where a WKB
+  estimate says the solution has decayed by e^-11 below its turning point,
+  beneath the deepest source, from starting values for a homogeneous sphere;
+  below that start the response is negligible and is taken to be zero.
+- **Integration** (`src/RungeKutta.hpp`). A Dormand-Prince 5(4) method
   with step-size control, restarted at every discontinuity. Solutions are
   carried with a running logarithmic scale, since they grow and decay by far
   more than a double can hold.
-- **Receivers** (`YSpec/Receivers.hpp`). The angular functions come from the
-  generalised Legendre functions of GSHTrans, which are regular at both poles.
-- **Time series** (`YSpec/TimeSeries.hpp`, `YSpec/Synthetics.hpp`). Spectra
-  are filtered, transformed with FFTW, undamped, and rotated to north and east.
+- **Receivers** (`src/Geometry.hpp`, `src/AngularFunctions.cpp`). The angular
+  functions come from the generalised Legendre functions of GSHTrans, which
+  are regular at both poles.
+- **Time series** (`src/TimeSeries.cpp`, `src/Synthetics.cpp`). Spectra
+  are rotated to north and east, passed through any instrument, filtered,
+  transformed with FFTW and undamped.
+- **Snapshots** (`src/Snapshots.cpp`). The coefficients of each degree and
+  order are gathered at each frequency, summed over degree at each depth and
+  distance a block of distances at a time, and summed over frequency directly
+  at each time.
+- **Kernels** (`YSpec/Kernels.hpp`, `src/Kernels.cpp`). The forward and
+  adjoint fields come from one solver, with the source and the receiver as its
+  two source radii and the nodes of the radial mesh as its receivers. The
+  adjoint field is expanded in the source's frame, where only orders |m| ≤ 2
+  meet the forward field, so the integrals over each sphere are sums over
+  degree and order of products of radial functions. The density's effect on
+  gravity is a radial integral on the same nodes.
 
 The calculation is threaded over frequency, with a loop over degree inside
-each thread.
+each thread. The library's public headers, in `YSpec/`, use only the standard
+library; the numerics and the libraries they build on are in `src/`.
 
 ## Using it as a library
 
-The library is header-only; link the CMake target `YSpec::YSpec`.
+Link the CMake target `YSpec::YSpec`. The public headers in `YSpec/` use only
+the standard library, and the library works in SI units.
 
 ```cpp
-#include <YSpec/Synthetics.hpp>
+#include <YSpec/YSpec.hpp>
 
-auto model = YSpec::Model::ReadDeck("prem.200");
-auto settings = YSpec::Settings{};
-settings.lMax = 200;
-settings.fMin = 0.2;               // mHz
-settings.fMax = 15;
-settings.length = 60;              // minutes
-settings.timeStep = 20;            // seconds
-settings.sourceDepth = 29.5;       // km
-settings.receiverDepth = 3;        // km: the sea floor of prem.200
-settings.moment = {.rr = 1e18};    // N m
-settings.receivers = {{0, 30}, {0, 60}};
-auto seismograms = YSpec::ComputeSeismograms(model, settings);
-double z = seismograms(0, 0, 100);  // receiver 0, vertical, sample 100
+const auto model = YSpec::Model::ReadDeck("prem.200");
+
+auto calculation = YSpec::Calculation{};
+calculation.degrees = {.min = 0, .max = 200};
+calculation.band = {.min = 0.2e-3, .max = 15e-3};           // Hz
+calculation.sampling = {.duration = 3600, .timeStep = 20};  // s
+
+const auto sources = std::vector<YSpec::Source>{
+    {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e18}}};
+const auto receivers = std::vector<YSpec::Receiver>{
+    {.location = {0, 30}, .depth = 3e3}, {.location = {0, 60}, .depth = 3e3}};
+
+const auto seismograms =
+    YSpec::ComputeSeismograms(model, calculation, sources, receivers);
+// The vertical component from the first source at the first receiver.
+const auto z = seismograms.Trace(0, 0, YSpec::Vertical);
 ```
 
-`YSpec::RadialSolver` gives the response to unit jumps for a single degree and
-frequency.
+Sources may be at any depths in one solid region of the model (below an
+ocean, for instance, and above the core), and receivers anywhere but at the
+centre. The radial integrations are shared by all of them: several sources,
+or receivers at several depths, cost little more than one. A source may be a
+moment tensor, a point force (`YSpec::Force`) or both, and
+`YSpec::ComputeStrains` gives seismograms of the strain tensor instead of the
+displacement, as strainmeters and fibre-optic cables record; strain and
+displacement satisfy reciprocity with each other to 1e-8, which the tests
+check. A receiver may carry an `Instrument`, read from a
+SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
+gives lines of receivers along great circles.
+
+`YSpec::ComputeRadialKernels` gives the sensitivity of a measurement on a
+seismogram to spherically symmetric perturbations of the model, by the adjoint
+method: of the density (with the gravity that follows from it), of the five
+Love moduli and of their quality factors. A measurement is given by its
+adjoint source, and `YSpec::Traveltime` forms that of a cross-correlation
+traveltime in a window. The adjoint field is the forward response, at the same
+complex frequencies, to a force at the receiver, so the kernels cost about
+what two sets of seismograms at every node of a radial mesh would; they
+predict finite differences of the measurement to about 1e-6, which the tests
+check. The derivation is in `docs/theory/adjoint-kernels.tex`.
+
+`YSpec::ComputeSnapshots` gives the wavefield on a `YSpec::SnapshotGrid` at
+chosen times. `YSpec::RunSeismograms("input.json")` and
+`YSpec::RunSnapshots("snapshot.json")` do what the programs do: read an input
+file, compute what it describes and write it. `YSpec::RadialSolver` gives the
+responses to unit jumps at a set of source radii, at a set of receiver radii,
+for one degree and frequency.
 
 ## Differences from the Fortran YSpec
 
@@ -199,6 +337,14 @@ frequency.
   correction includes the gravity-flux term that the original omits; it
   vanishes at a free surface but not at a buried receiver (about 1e-3 of the
   peak acceleration on the sea floor).
+- Receivers, and the points of snapshots, may be anywhere: in an ocean, in the
+  outer core or in the inner core, as well as in the solid region of the
+  sources. Their responses agree with direct shooting to 1e-8.
+- Without self-gravitation and in the Cowling approximation, the starting
+  solution of the S type lacked a factor of zeta on the Bessel-function term
+  of its tangential displacement. Its error decays upwards from the start, so
+  it only mattered for receivers near the start, which the original could not
+  have.
 - Degrees above 1827 are allowed: the angular functions are then tabulated in
   long double.
 
@@ -207,9 +353,12 @@ frequency.
 `ctest --test-dir build` runs unit tests; comparisons of the solvers with the
 Fortran's for single degrees and frequencies over a range of models and
 options; checks independent of the Fortran (the normal modes of PREM, the
-toroidal modes of a homogeneous sphere against their closed form, continuity
-at the epicentre); and four end-to-end cases compared with the Fortran's
-seismograms.
+toroidal modes of a homogeneous sphere against their closed form, responses
+in the oceans and the core against direct shooting of the solutions,
+continuity at the epicentre, snapshots against seismograms, strain against
+displacement by differences and reciprocity, kernels against finite
+differences of their measurement in every treatment of gravity); and four
+end-to-end cases compared with the Fortran's seismograms.
 The scripts in `tests/fortran` regenerate the reference data from a checkout
 of the Fortran YSpec.
 
@@ -221,3 +370,7 @@ of the Fortran YSpec.
 - Al-Attar, D. & Woodhouse, J. H., 2008. Calculation of seismic displacement
   fields in self-gravitating earth models -- applications of minors vectors
   and symplectic structure. Geophys. J. Int., 175, 1176-1208.
+
+## Licence
+
+BSD 3-Clause; see `LICENSE`.
