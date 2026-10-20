@@ -8,6 +8,7 @@
 #include "Calculation.hpp"
 #include "Input.hpp"
 #include "Instrument.hpp"
+#include "Kernels.hpp"
 #include "Location.hpp"
 #include "Model.hpp"
 #include "RadialSolver.hpp"

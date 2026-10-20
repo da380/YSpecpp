@@ -45,13 +45,17 @@ receivers, and `yspec-snapshot` the wavefield at chosen times on a grid
 around each source. They read JSON files that share most of their members.
 
 ```sh
-build/bin/yspec examples/input.json
-build/bin/yspec-snapshot examples/snapshot.json
+cd build
+bin/yspec examples/input.json
+bin/yspec-snapshot examples/snapshot.json
 ```
 
-The number of threads is set with `OMP_NUM_THREADS`. For `yspec`, one file is written per
-receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the receivers are
-listed; with several sources, one per source and receiver,
+The build copies the example inputs and models into `build/examples`, so the
+outputs are written there, beside their inputs, and not in the sources.
+
+The number of threads is set with `OMP_NUM_THREADS`. For `yspec`, one file is
+written per receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the
+receivers are listed; with several sources, one per source and receiver,
 `<prefix>.<source>.1`, .... Each line holds the time after the origin time (s)
 and the vertical (up), north and east components, in SI units of the quantity
 asked for, or in the units of the instrument's output where there is one.
@@ -247,6 +251,13 @@ afterwards, through the weights of the jumps and the angular functions.
   order are gathered at each frequency, summed over degree at each depth and
   distance a block of distances at a time, and summed over frequency directly
   at each time.
+- **Kernels** (`YSpec/Kernels.hpp`, `src/Kernels.cpp`). The forward and
+  adjoint fields come from one solver, with the source and the receiver as its
+  two source radii and the nodes of the radial mesh as its receivers. The
+  adjoint field is expanded in the source's frame, where only orders |m| ≤ 2
+  meet the forward field, so the integrals over each sphere are sums over
+  degree and order of products of radial functions. The density's effect on
+  gravity is a radial integral on the same nodes.
 
 The calculation is threaded over frequency, with a loop over degree inside
 each thread. The library's public headers, in `YSpec/`, use only the standard
@@ -289,6 +300,17 @@ displacement satisfy reciprocity with each other to 1e-8, which the tests
 check. A receiver may carry an `Instrument`, read from a
 SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
 gives lines of receivers along great circles.
+
+`YSpec::ComputeRadialKernels` gives the sensitivity of a measurement on a
+seismogram to spherically symmetric perturbations of the model, by the adjoint
+method: of the density (with the gravity that follows from it), of the five
+Love moduli and of their quality factors. A measurement is given by its
+adjoint source, and `YSpec::Traveltime` forms that of a cross-correlation
+traveltime in a window. The adjoint field is the forward response, at the same
+complex frequencies, to a force at the receiver, so the kernels cost about
+what two sets of seismograms at every node of a radial mesh would; they
+predict finite differences of the measurement to about 1e-6, which the tests
+check. The derivation is in `docs/theory/adjoint-kernels.tex`.
 
 `YSpec::ComputeSnapshots` gives the wavefield on a `YSpec::SnapshotGrid` at
 chosen times. `YSpec::RunSeismograms("input.json")` and
@@ -333,7 +355,9 @@ Fortran's for single degrees and frequencies over a range of models and
 options; checks independent of the Fortran (the normal modes of PREM, the
 toroidal modes of a homogeneous sphere against their closed form, responses
 in the oceans and the core against direct shooting of the solutions,
-continuity at the epicentre, snapshots against seismograms); and four
+continuity at the epicentre, snapshots against seismograms, strain against
+displacement by differences and reciprocity, kernels against finite
+differences of their measurement in every treatment of gravity); and four
 end-to-end cases compared with the Fortran's seismograms.
 The scripts in `tests/fortran` regenerate the reference data from a checkout
 of the Fortran YSpec.

@@ -15,6 +15,7 @@
 
 #include "Equations.hpp"
 #include "OrderArray.hpp"
+#include "SourceWeights.hpp"
 #include "TimeSeries.hpp"
 
 namespace YSpec {
@@ -74,7 +75,9 @@ Responses Record(const DepthSolves& solves, int l, Complex omega,
                  const Calculation& calculation);
 
 // The displacement coefficients for one source, order by order, and their
-// radial derivatives (that of v is zero in a fluid).
+// radial derivatives (that of v is zero in a fluid), with those of the
+// perturbation of the potential (zero without self-gravitation, and at l =
+// 0, where it is not formed).
 struct Coefficients {
   OrderArray<Complex> u;   // radial
   OrderArray<Complex> v;   // consoidal
@@ -82,7 +85,14 @@ struct Coefficients {
   OrderArray<Complex> du;  // d/dr
   OrderArray<Complex> dv;
   OrderArray<Complex> dw;
+  OrderArray<Complex> phi;
+  OrderArray<Complex> dphi;
 };
+
+// The responses to a source's jumps, combined with its weights.
+Coefficients Combine(const Responses& responses, std::size_t sourceDepth,
+                     std::size_t receiverDepth, int l,
+                     const SourceWeights& weights);
 
 // With the moment tensor and the force non-dimensional.
 Coefficients Weight(const Responses& responses, std::size_t sourceDepth,

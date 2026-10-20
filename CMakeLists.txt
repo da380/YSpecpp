@@ -108,6 +108,7 @@ target_link_libraries(YSpecInternal INTERFACE
   NumericConcepts::NumericConcepts
   Interpolation::Interpolation
   FFTWpp::FFTWpp
+  GaussQuad::GaussQuad
   GSHTrans::GSHTrans
   planetmodel::planetmodel)
 
@@ -120,6 +121,7 @@ add_library(YSpec
   src/Input.cpp
   src/InputSections.cpp
   src/Instrument.cpp
+  src/Kernels.cpp
   src/Location.cpp
   src/Model.cpp
   src/RadialSolver.cpp
@@ -155,6 +157,26 @@ endforeach()
 # package has to wait until planetmodel exports one of its own.
 include(GNUInstallDirs)
 install(TARGETS ${YSPEC_PROGRAMS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# The example inputs and models, copied into the build tree, so that from the
+# build directory `bin/yspec examples/input.json` runs and writes its output
+# there rather than in the sources. They are copied again when they change.
+if(PROJECT_IS_TOP_LEVEL)
+  file(GLOB YSPEC_EXAMPLE_FILES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/prem.*)
+  set(YSPEC_EXAMPLE_COPIES)
+  foreach(file IN LISTS YSPEC_EXAMPLE_FILES)
+    get_filename_component(name ${file} NAME)
+    set(copy ${CMAKE_CURRENT_BINARY_DIR}/examples/${name})
+    add_custom_command(OUTPUT ${copy}
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${file} ${copy}
+      DEPENDS ${file}
+      COMMENT "Copying examples/${name}")
+    list(APPEND YSPEC_EXAMPLE_COPIES ${copy})
+  endforeach()
+  add_custom_target(examples ALL DEPENDS ${YSPEC_EXAMPLE_COPIES})
+endif()
 
 if(PROJECT_IS_TOP_LEVEL)
   option(YSPEC_BUILD_TESTS "Build the test suite" ON)

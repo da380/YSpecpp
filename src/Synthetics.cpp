@@ -11,6 +11,7 @@
 #include "Coefficients.hpp"
 #include "Geometry.hpp"
 #include "OrderArray.hpp"
+#include "Spectra.hpp"
 #include "TimeSeries.hpp"
 
 namespace YSpec {
@@ -202,56 +203,13 @@ struct Strain {
   }
 };
 
-// The spectra for every source, receiver and component, at the grid's
-// frequencies.
-class Spectra {
- public:
-  Spectra(std::size_t sources, std::size_t receivers, std::size_t components,
-          std::size_t frequencies)
-      : receivers_{receivers},
-        components_{components},
-        frequencies_{frequencies},
-        values_(sources * receivers * components * frequencies) {}
-
-  Complex& operator()(std::size_t source, std::size_t receiver,
-                      std::size_t component, std::size_t frequency) {
-    return values_[((source * receivers_ + receiver) * components_ +
-                    component) *
-                       frequencies_ +
-                   frequency];
-  }
-  const std::vector<Complex>& Values() const { return values_; }
-
- private:
-  std::size_t receivers_;
-  std::size_t components_;
-  std::size_t frequencies_;
-  std::vector<Complex> values_;
-};
-
-// The response of an instrument to the quantity computed, at the grid's
-// frequencies (non-dimensional, with the unit of time given): its response to
-// the motion it responds to, converted by a power of i omega.
-std::vector<Complex> InstrumentResponse(const Instrument& instrument,
-                                        const FrequencyGrid& grid, double time,
-                                        Quantity computed) {
-  const auto power = Derivatives(instrument.input) - Derivatives(computed);
-  auto response = std::vector<Complex>{};
-  for (auto j : std::views::iota(std::size_t{0}, grid.Count())) {
-    const auto omega = grid.Omega(j) / time;
-    response.push_back(instrument.Response(omega) *
-                       std::pow(1i * omega, power));
-  }
-  return response;
-}
-
-// The seismograms of a kind, Displacement or Strain.
+// The spectra of seismograms of a kind, Displacement or Strain, turned to
+// the receivers' frames and through their instruments.
 template <class Kind>
-typename Kind::Output Compute(const Model& model,
-                              const Calculation& calculation,
-                              std::span<const Source> sources,
-                              std::span<const Receiver> receivers,
-                              const Progress& progress) {
+Spectra ComputeSpectra(const Model& model, const Calculation& calculation,
+                       std::span<const Source> sources,
+                       std::span<const Receiver> receivers,
+                       const Progress& progress) {
   constexpr auto components = Kind::Components;
   const auto& scales = model.GetScales();
   const auto& degrees = calculation.degrees;
@@ -263,8 +221,6 @@ typename Kind::Output Compute(const Model& model,
   }
 
   const auto grid = MakeGrid(calculation, scales);
-  const auto taper = MakeTaper(calculation, scales);
-  const auto& sampling = calculation.sampling;
 
   // One solver for every source depth and every receiver depth.
   auto depths = std::vector<double>{};
@@ -349,17 +305,31 @@ typename Kind::Output Compute(const Model& model,
     }
   }
 
+  return spectra;
+}
+
+// The seismograms of a kind, Displacement or Strain.
+template <class Kind>
+typename Kind::Output Compute(const Model& model,
+                              const Calculation& calculation,
+                              std::span<const Source> sources,
+                              std::span<const Receiver> receivers,
+                              const Progress& progress) {
+  constexpr auto components = Kind::Components;
+  const auto spectra =
+      ComputeSpectra<Kind>(model, calculation, sources, receivers, progress);
+  const auto& scales = model.GetScales();
+  const auto grid = MakeGrid(calculation, scales);
+  const auto receiverCount = receivers.size();
+
   // To time series, in SI units or those of the instruments.
   const auto series =
-      InverseTransform(grid, taper, spectra.Values(),
+      InverseTransform(grid, MakeTaper(calculation, scales), spectra.Values(),
                        sources.size() * receiverCount * components);
-  const auto samples = std::min<std::size_t>(
-      grid.Samples(),
-      static_cast<std::size_t>(sampling.duration / sampling.timeStep + 1e-9) +
-          1);
+  const auto samples = SampleCount(grid, calculation.sampling);
   const auto unit = Kind::Unit(scales, calculation.quantity);
   auto output = typename Kind::Output(sources.size(), receiverCount, samples,
-                                      sampling.timeStep);
+                                      calculation.sampling.timeStep);
   for (auto source : std::views::iota(std::size_t{0}, sources.size())) {
     for (auto receiver : std::views::iota(std::size_t{0}, receiverCount)) {
       for (auto component : std::views::iota(std::size_t{0}, components)) {
@@ -380,6 +350,14 @@ typename Kind::Output Compute(const Model& model,
 }
 
 }  // namespace
+
+Spectra SeismogramSpectra(const Model& model, const Calculation& calculation,
+                          std::span<const Source> sources,
+                          std::span<const Receiver> receivers,
+                          const Progress& progress) {
+  return ComputeSpectra<Displacement>(model, calculation, sources, receivers,
+                                      progress);
+}
 
 Seismograms ComputeSeismograms(const Model& model,
                                const Calculation& calculation,

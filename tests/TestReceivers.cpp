@@ -171,4 +171,35 @@ TEST(SpinFunctions, SatisfyTheirRecurrences) {
   }
 }
 
+TEST(SpinFunctions, PairUnderIntegrationOverTheSphere) {
+  // With Y^N_lm = X^N_lm(theta) exp(i m phi), the bilinear integral
+  // int Y^N_lm Y^-N_l'm' dOmega is (-1)^(N+m) when l' = l and m' = -m, and
+  // zero for l' != l.
+  const auto count = 2001;
+  auto theta = std::vector<double>{};
+  for (auto i = 0; i < count; ++i) theta.push_back(pi * i / (count - 1));
+  const auto x = SpinFunctions(8, theta);
+  for (auto l = 2; l <= 8; ++l) {
+    for (auto lp : {l, l - 1}) {
+      for (auto m = -2; m <= 2; ++m) {
+        for (auto n = -2; n <= 2; ++n) {
+          // Simpson's rule in theta; the integral in phi is 2 pi.
+          auto sum = 0.0;
+          for (auto i = 0; i < count; ++i) {
+            const auto weight = (i == 0 || i == count - 1) ? 1.0
+                                : (i % 2 == 1)             ? 4.0
+                                                           : 2.0;
+            sum += weight * x(i, l, m)[n + 2] * x(i, lp, -m)[-n + 2] *
+                   std::sin(theta[i]);
+          }
+          const auto integral = 2 * pi * sum * (pi / (count - 1)) / 3;
+          const auto sign = ((n + m) % 2 == 0) ? 1.0 : -1.0;
+          EXPECT_NEAR(integral, lp == l ? sign : 0.0, 1e-8)
+              << l << " " << lp << " " << m << " " << n;
+        }
+      }
+    }
+  }
+}
+
 }  // namespace

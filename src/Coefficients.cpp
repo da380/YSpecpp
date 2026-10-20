@@ -5,8 +5,6 @@
 #include <ranges>
 #include <stdexcept>
 
-#include "SourceWeights.hpp"
-
 namespace YSpec {
 
 using namespace std::complex_literals;
@@ -178,37 +176,44 @@ Responses Record(const DepthSolves& solves, int l, Complex omega,
   return result;
 }
 
-Coefficients Weight(const Responses& responses, std::size_t sourceDepth,
-                    std::size_t receiverDepth, const Context& c,
-                    const ComplexMaterial& atSource, const MomentTensor& moment,
-                    const Force& force) {
+Coefficients Combine(const Responses& responses, std::size_t sourceDepth,
+                     std::size_t receiverDepth, int l,
+                     const SourceWeights& weights) {
   auto result = Coefficients{};
-  const auto l = c.Degree();
   if (l == 0) {
     const auto& radial = responses.radial(sourceDepth, receiverDepth);
-    const auto weights = Radial(c, atSource, moment, force);
-    result.u[0] = weights[0] * radial.U[0] + weights[1] * radial.U[1];
-    result.du[0] = weights[0] * radial.DU[0] + weights[1] * radial.DU[1];
+    const auto& w = weights.radial;
+    result.u[0] = w[0] * radial.U[0] + w[1] * radial.U[1];
+    result.du[0] = w[0] * radial.DU[0] + w[1] * radial.DU[1];
     return result;
   }
   const auto& toroidal = responses.toroidal(sourceDepth, receiverDepth);
   const auto& spheroidal = responses.spheroidal(sourceDepth, receiverDepth);
-  const auto toroidalWeights = Toroidal(c, atSource, moment, force);
-  const auto spheroidalWeights = Spheroidal(c, atSource, moment, force);
   for (auto m : OrderArray<Complex>::Orders(l)) {
     for (auto j : {0, 1}) {
-      result.w[m] += toroidalWeights[m][j] * toroidal.W[j];
-      result.dw[m] += toroidalWeights[m][j] * toroidal.DW[j];
+      const auto weight = weights.toroidal[m][j];
+      result.w[m] += weight * toroidal.W[j];
+      result.dw[m] += weight * toroidal.DW[j];
     }
     for (auto j : {0, 1, 2, 3}) {
-      const auto weight = spheroidalWeights[m][j];
+      const auto weight = weights.spheroidal[m][j];
       result.u[m] += weight * spheroidal.U[j];
       result.v[m] += weight * spheroidal.V[j];
       result.du[m] += weight * spheroidal.DU[j];
       result.dv[m] += weight * spheroidal.DV[j];
+      result.phi[m] += weight * spheroidal.Phi[j];
+      result.dphi[m] += weight * spheroidal.DPhi[j];
     }
   }
   return result;
+}
+
+Coefficients Weight(const Responses& responses, std::size_t sourceDepth,
+                    std::size_t receiverDepth, const Context& c,
+                    const ComplexMaterial& atSource, const MomentTensor& moment,
+                    const Force& force) {
+  return Combine(responses, sourceDepth, receiverDepth, c.Degree(),
+                 PoleWeights(c, atSource, moment, force));
 }
 
 }  // namespace YSpec
