@@ -127,17 +127,32 @@ void ReadSolver(const Json& solver, Calculation& calculation) {
   }
 }
 
+// A source: a moment tensor, a force, or both.
 Source ReadSource(const Json& json) {
-  Allow(json,
-        {"name", "depth_km", "latitude", "longitude", "moment_tensor_Nm"});
-  const auto& moment = json.At("moment_tensor_Nm");
-  Allow(moment, {"rr", "rt", "rp", "tt", "tp", "pp"});
-  return {
+  Allow(json, {"name", "depth_km", "latitude", "longitude", "moment_tensor_Nm",
+               "force_N"});
+  auto source = Source{
       .location = {Latitude(json.At("latitude")), Number(json, "longitude")},
       .depth = Depth(json.At("depth_km")),
-      .moment = {Number(moment, "rr"), Number(moment, "rt"),
-                 Number(moment, "rp"), Number(moment, "tt"),
-                 Number(moment, "tp"), Number(moment, "pp")}};
+      .moment = {},
+      .force = {}};
+  const auto* moment = json.Find("moment_tensor_Nm");
+  const auto* force = json.Find("force_N");
+  if (!moment && !force) {
+    Fail(json, "should have a \"moment_tensor_Nm\", a \"force_N\", or both");
+  }
+  if (moment) {
+    Allow(*moment, {"rr", "rt", "rp", "tt", "tp", "pp"});
+    source.moment = {Number(*moment, "rr"), Number(*moment, "rt"),
+                     Number(*moment, "rp"), Number(*moment, "tt"),
+                     Number(*moment, "tp"), Number(*moment, "pp")};
+  }
+  if (force) {
+    Allow(*force, {"r", "t", "p"});
+    source.force = {Number(*force, "r", 0), Number(*force, "t", 0),
+                    Number(*force, "p", 0)};
+  }
+  return source;
 }
 
 void ReadSources(const Json& sources, Shared& shared) {

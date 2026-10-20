@@ -260,4 +260,30 @@ TEST(Input, RefusesFaultySnapshots) {
   }
 }
 
+TEST(Input, ReadsForces) {
+  auto text = Document();
+  const auto moment = std::string(
+      R"("moment_tensor_Nm": { "rr": 1, "rt": 0, "rp": 0, "tt": 0, "tp": 0, "pp": 0 })");
+  text.replace(text.find(moment), moment.size(),
+               R"("force_N": { "r": -1e12, "p": 2e12 })");
+  const auto input = ReadSeismogramInput(Write("force.json", text));
+  ASSERT_EQ(input.sources.size(), 1u);
+  EXPECT_DOUBLE_EQ(input.sources[0].force.r, -1e12);
+  EXPECT_DOUBLE_EQ(input.sources[0].force.t, 0);
+  EXPECT_DOUBLE_EQ(input.sources[0].force.p, 2e12);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.rr, 0);
+  text.replace(text.find(R"("force_N")"), 9, R"("forces_N")");
+  EXPECT_THROW((void)ReadSeismogramInput(Write("force.json", text)),
+               std::runtime_error);
+  auto neither = Document();
+  neither.replace(neither.find(moment), moment.size(), R"("name": "x")");
+  try {
+    (void)ReadSeismogramInput(Write("neither.json", neither));
+    FAIL() << "no exception";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(std::string(e.what()).find("force_N"), std::string::npos)
+        << e.what();
+  }
+}
+
 }  // namespace

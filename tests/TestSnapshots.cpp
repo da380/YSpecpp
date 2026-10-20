@@ -128,7 +128,7 @@ TEST(Snapshots, RefuseWhatTheyCannotCompute) {
   deep.depths = {7000e3};
   refuses(deep, times);
   auto far = grid;
-  far.distances = {190};
+  far.distances.assign(1, 190.0);
   refuses(far, times);
   auto empty = grid;
   empty.azimuths.clear();

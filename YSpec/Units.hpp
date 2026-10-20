@@ -57,8 +57,10 @@ class Scales {
   auto Acceleration() const { return Velocity() / Time(); }
   /** @brief The scale of elastic moduli (Pa). */
   auto Modulus() const { return density_ * Velocity() * Velocity(); }
+  /** @brief The scale of a force (N). */
+  auto Force() const { return Modulus() * length_ * length_; }
   /** @brief The scale of a moment tensor (N m). */
-  auto Moment() const { return Modulus() * length_ * length_ * length_; }
+  auto Moment() const { return Force() * length_; }
 
  private:
   double length_;

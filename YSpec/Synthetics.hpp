@@ -44,4 +44,25 @@ Seismograms ComputeSeismograms(const Model& model,
                                std::span<const Receiver> receivers,
                                const Progress& progress = {});
 
+/**
+ * @brief Computes synthetic seismograms of strain.
+ *
+ * @details As ComputeSeismograms, but recording the six components of the
+ * strain tensor at each receiver, in spherical coordinates there (r up,
+ * @f$\theta@f$ south, @f$\phi@f$ east), or their rate or second derivative.
+ * The potential and tilt corrections do not apply. In a fluid, where the
+ * radial derivative of the tangential displacement is not given, rt and rp
+ * are zero.
+ * @param model The earth model.
+ * @param calculation What to compute.
+ * @param sources The sources.
+ * @param receivers The receivers.
+ * @param progress Called as frequencies are completed, if given.
+ * @throws std::invalid_argument as ComputeSeismograms does.
+ */
+Strains ComputeStrains(const Model& model, const Calculation& calculation,
+                       std::span<const Source> sources,
+                       std::span<const Receiver> receivers,
+                       const Progress& progress = {});
+
 }  // namespace YSpec

@@ -146,4 +146,29 @@ TEST(AngularFunctions, AreRegularAtThePoles) {
   }
 }
 
+TEST(SpinFunctions, SatisfyTheirRecurrences) {
+  // d/dtheta X^N = (a_N X^{N-1} - b_N X^{N+1}) / 2 and
+  // (m - N cos theta) / sin theta X^N = -(a_N X^{N-1} + b_N X^{N+1}) / 2,
+  // with a_N = sqrt((l+N)(l-N+1)) and b_N = sqrt((l-N)(l+N+1)).
+  const auto theta = 0.7;
+  const auto h = 1e-6;
+  const auto x = SpinFunctions(12, {theta - h, theta, theta + h});
+  for (auto l = 2; l <= 12; ++l) {
+    for (auto m = -2; m <= 2; ++m) {
+      for (auto n = -1; n <= 1; ++n) {
+        const auto& at = x(1, l, m);
+        const auto a = std::sqrt((l + n) * (l - n + 1.0));
+        const auto b = std::sqrt((l - n) * (l + n + 1.0));
+        const auto derivative =
+            (x(2, l, m)[n + 2] - x(0, l, m)[n + 2]) / (2 * h);
+        EXPECT_NEAR(derivative, (a * at[n + 1] - b * at[n + 3]) / 2, 1e-7)
+            << l << " " << m << " " << n;
+        EXPECT_NEAR((m - n * std::cos(theta)) / std::sin(theta) * at[n + 2],
+                    -(a * at[n + 1] + b * at[n + 3]) / 2, 1e-12)
+            << l << " " << m << " " << n;
+      }
+    }
+  }
+}
+
 }  // namespace

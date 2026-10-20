@@ -73,17 +73,22 @@ struct Responses {
 Responses Record(const DepthSolves& solves, int l, Complex omega,
                  const Calculation& calculation);
 
-// The displacement coefficients for one source, order by order.
+// The displacement coefficients for one source, order by order, and their
+// radial derivatives (that of v is zero in a fluid).
 struct Coefficients {
-  OrderArray<Complex> u;  // radial
-  OrderArray<Complex> v;  // consoidal
-  OrderArray<Complex> w;  // toroidal
+  OrderArray<Complex> u;   // radial
+  OrderArray<Complex> v;   // consoidal
+  OrderArray<Complex> w;   // toroidal
+  OrderArray<Complex> du;  // d/dr
+  OrderArray<Complex> dv;
+  OrderArray<Complex> dw;
 };
 
+// With the moment tensor and the force non-dimensional.
 Coefficients Weight(const Responses& responses, std::size_t sourceDepth,
                     std::size_t receiverDepth, const Context& c,
-                    const ComplexMaterial& atSource,
-                    const MomentTensor& moment);
+                    const ComplexMaterial& atSource, const MomentTensor& moment,
+                    const Force& force);
 
 // Calls each(source, receiverDepth, coefficients) for every source and every
 // receiver depth, at one degree and frequency.
@@ -101,11 +106,12 @@ void ForEachSource(const DepthSolves& solves, const Model& model,
     const auto atSource = c(point.layer, point.r);
     for (auto source : solves.sourceDepths[sourceDepth].members) {
       const auto moment = sources[source].moment / scales.Moment();
+      const auto force = sources[source].force / scales.Force();
       for (auto receiverDepth :
            std::views::iota(std::size_t{0}, solves.receiverDepths.size())) {
-        each(
-            source, receiverDepth,
-            Weight(responses, sourceDepth, receiverDepth, c, atSource, moment));
+        each(source, receiverDepth,
+             Weight(responses, sourceDepth, receiverDepth, c, atSource, moment,
+                    force));
       }
     }
   }

@@ -2,16 +2,23 @@
 
 /**
  * @file SourceWeights.hpp
- * @brief The jumps a moment-tensor point source imposes on the radial
- * solutions.
+ * @brief The jumps a point source imposes on the radial solutions.
  *
  * @details In a frame with the source at the north pole only orders
  * @f$|m| \le 2@f$ are excited. For each degree and order the source imposes a
  * jump on the displacement and traction at the source radius; the radial
  * solvers give the response to unit jumps, and the response to the source is
  * their combination with the weights computed here. The time dependence is a
- * step in moment, hence the factor @f$1/(i\omega)@f$. The formulas are those
- * of the original YSpec.
+ * step, hence the factor @f$1/(i\omega)@f$. The formulas for a moment tensor
+ * are those of the original YSpec.
+ *
+ * A moment tensor imposes a jump in displacement, @f$M\cdot\hat{r}@f$ over
+ * the modulus and @f$r^2@f$, and in traction; a force @f$\mathbf{f}@f$ only
+ * one in traction, @f$-\mathbf{f}/r^2@f$. The tractions are scaled as the
+ * displacements are, so the force's weights are those of the first part of
+ * the moment tensor's, with @f$M_{rr}/C@f$, @f$M_{r\theta}/L@f$ and
+ * @f$M_{r\phi}/L@f$ replaced by @f$-f_r@f$, @f$-f_\theta@f$ and
+ * @f$-f_\phi@f$, and placed in the jumps in traction.
  */
 
 #include <YSpec/Source.hpp>
@@ -48,13 +55,16 @@ inline Complex Factor(const Context& c, double r) {
 }  // namespace SourceDetails
 
 /**
- * @brief The toroidal weights for degree @f$l \ge 1@f$.
+ * @brief The toroidal weights for degree @f$l \ge 1@f$, in the jumps
+ * (W, T).
  * @param c The degree and frequency.
  * @param m The material at the source.
  * @param moment The moment tensor, non-dimensional.
+ * @param force The force, non-dimensional.
  */
 inline ToroidalWeights Toroidal(const Context& c, const ComplexMaterial& m,
-                                const MomentTensor& moment) {
+                                const MomentTensor& moment,
+                                const Force& force) {
   using namespace std::complex_literals;
   const auto rs = m.r;
   // sqrt((l-1)(l+2)), the factor of the terms of order +-2.
@@ -67,6 +77,8 @@ inline ToroidalWeights Toroidal(const Context& c, const ComplexMaterial& m,
              (-1i * moment.tt + 1i * moment.pp + 2.0 * moment.tp) * factor;
   w[2][1] = 0.25 * rootZeta2m2 *
             (1i * moment.tt - 1i * moment.pp + 2.0 * moment.tp) * factor;
+  w[-1][1] += 0.5 * rs * (force.p - 1i * force.t) * factor;
+  w[1][1] += 0.5 * rs * (-force.p - 1i * force.t) * factor;
   return w;
 }
 
@@ -74,7 +86,8 @@ inline ToroidalWeights Toroidal(const Context& c, const ComplexMaterial& m,
  * @brief The spheroidal weights for degree @f$l \ge 1@f$.
  */
 inline SpheroidalWeights Spheroidal(const Context& c, const ComplexMaterial& m,
-                                    const MomentTensor& moment) {
+                                    const MomentTensor& moment,
+                                    const Force& force) {
   using namespace std::complex_literals;
   const auto rs = m.r;
   const auto zeta = c.Zeta();
@@ -94,6 +107,9 @@ inline SpheroidalWeights Spheroidal(const Context& c, const ComplexMaterial& m,
   w[1][1] = 0.5 * rs * (-moment.rt + 1i * moment.rp) / m.L * factor;
   w[2][3] =
       0.25 * rootZeta2m2 * (-moment.tt + moment.pp + 2.0i * moment.tp) * factor;
+  w[0][2] += -rs * force.r * factor;
+  w[-1][3] += 0.5 * rs * (-force.t - 1i * force.p) * factor;
+  w[1][3] += 0.5 * rs * (force.t - 1i * force.p) * factor;
   return w;
 }
 
@@ -101,11 +117,13 @@ inline SpheroidalWeights Spheroidal(const Context& c, const ComplexMaterial& m,
  * @brief The radial (l = 0) weights.
  */
 inline RadialWeights Radial(const Context& c, const ComplexMaterial& m,
-                            const MomentTensor& moment) {
+                            const MomentTensor& moment, const Force& force) {
   const auto rs = m.r;
   const auto factor = SourceDetails::Factor(c, rs);
-  return {rs * moment.rr / m.C * factor,
-          (-moment.tt - moment.pp + 2.0 * moment.rr * m.F / m.C) * factor};
+  return {
+      rs * moment.rr / m.C * factor,
+      (-moment.tt - moment.pp + 2.0 * moment.rr * m.F / m.C - rs * force.r) *
+          factor};
 }
 
 }  // namespace YSpec

@@ -56,14 +56,19 @@ struct Point {
   double r;   ///< The radius.
 };
 
-/** @brief The toroidal response: W at the receiver for the two unit jumps. */
+/**
+ * @brief The toroidal response at the receiver for the two unit jumps: W, and
+ * its radial derivative, which is zero in a fluid.
+ */
 struct ToroidalResponse {
-  std::array<Complex, 2> W;  ///< The toroidal displacement coefficient.
+  std::array<Complex, 2> W;   ///< The toroidal displacement coefficient.
+  std::array<Complex, 2> DW;  ///< Its radial derivative.
 };
 
-/** @brief The radial (l = 0) response: U for the two unit jumps. */
+/** @brief The radial (l = 0) response: U and its radial derivative. */
 struct RadialResponse {
-  std::array<Complex, 2> U;  ///< The radial displacement.
+  std::array<Complex, 2> U;   ///< The radial displacement.
+  std::array<Complex, 2> DU;  ///< Its radial derivative.
 };
 
 /**
@@ -71,13 +76,17 @@ struct RadialResponse {
  * in the displacement and the traction.
  *
  * @details The potential and its gradient are zero unless the solver is
- * self-gravitating.
+ * self-gravitating. The radial derivatives of the displacement follow from
+ * the tractions; in a fluid, where there is no shear, that of V is not given
+ * and is zero.
  */
 struct SpheroidalResponse {
   std::array<Complex, 4> U;     ///< The radial displacement coefficient.
   std::array<Complex, 4> V;     ///< The consoidal displacement coefficient.
   std::array<Complex, 4> Phi;   ///< The perturbation of the potential.
   std::array<Complex, 4> DPhi;  ///< Its radial derivative.
+  std::array<Complex, 4> DU;    ///< The radial derivative of U.
+  std::array<Complex, 4> DV;    ///< The radial derivative of V.
 };
 
 /**

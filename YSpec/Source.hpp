@@ -2,7 +2,7 @@
 
 /**
  * @file Source.hpp
- * @brief A moment-tensor point source.
+ * @brief A point source: a moment tensor, a force, or both.
  */
 
 #include "Location.hpp"
@@ -30,12 +30,29 @@ struct MomentTensor {
 };
 
 /**
- * @brief A point source: a step in moment at the origin time.
+ * @brief The components of a force (N) in spherical coordinates at the
+ * source: r up, @f$\theta@f$ south and @f$\phi@f$ east.
+ */
+struct Force {
+  double r = 0;  ///< @f$f_r@f$.
+  double t = 0;  ///< @f$f_\theta@f$.
+  double p = 0;  ///< @f$f_\phi@f$.
+
+  /** @brief The force divided by a scale. */
+  Force operator/(double scale) const {
+    return {r / scale, t / scale, p / scale};
+  }
+};
+
+/**
+ * @brief A point source: a step at the origin time in a moment tensor, a
+ * force, or both.
  */
 struct Source {
   Location location;    ///< The epicentre.
   double depth = 0;     ///< The depth (m).
   MomentTensor moment;  ///< The moment tensor (N m).
+  Force force = {};     ///< The force (N).
 };
 
 }  // namespace YSpec

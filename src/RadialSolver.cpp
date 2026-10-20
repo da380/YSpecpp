@@ -74,19 +74,21 @@ struct WithoutPotential {
   static Vector<4> BVector(const Vector<5>& minors, const Vector<4>& jump) {
     return BStart(minors, jump);
   }
-  // U, V, the potential and the flux, from the solution vector.
-  static std::array<Complex, 4> Components(const Vector<4>& y) {
-    return {y[0], y[1], Complex{}, Complex{}};
+  // U, V, the potential, the flux and the tractions P and S, from the
+  // solution vector.
+  static std::array<Complex, 6> Components(const Vector<4>& y) {
+    return {y[0], y[1], Complex{}, Complex{}, y[2], y[3]};
   }
   // The same in a fluid, from the solution and the constant.
-  static std::array<Complex, 4> FluidComponents(const Vector<2>& solution,
+  static std::array<Complex, 6> FluidComponents(const Vector<2>& solution,
                                                 const Vector<1>& b,
                                                 const Context& c,
                                                 const ComplexMaterial& m) {
     const auto rU = solution[0] * b[0];
     const auto P = solution[1] * b[0];
-    return {rU, FluidConsoidal(c, m, rU, 0.0, P, Cowling), Complex{},
-            Complex{}};
+    return {rU,        FluidConsoidal(c, m, rU, 0.0, P, Cowling),
+            Complex{}, Complex{},
+            P,         Complex{}};
   }
 };
 
@@ -130,16 +132,18 @@ struct WithPotential {
   static Vector<14> BVector(const Vector<14>& minors, const Vector<6>& jump) {
     return BStart(minors, jump);
   }
-  static std::array<Complex, 4> Components(const Vector<6>& y) {
-    return {y[0], y[1], y[2], y[5]};
+  static std::array<Complex, 6> Components(const Vector<6>& y) {
+    return {y[0], y[1], y[2], y[5], y[3], y[4]};
   }
   // The same in a fluid, whose variables are (U, phi, P, psi).
-  static std::array<Complex, 4> FluidComponents(const Vector<5>& minors,
+  static std::array<Complex, 6> FluidComponents(const Vector<5>& minors,
                                                 const Vector<4>& b,
                                                 const Context& c,
                                                 const ComplexMaterial& m) {
     const auto y = Solution(minors, b);
-    return {y[0], FluidConsoidal(c, m, y[0], y[1], y[2], true), y[1], y[3]};
+    return {y[0], FluidConsoidal(c, m, y[0], y[1], y[2], true),
+            y[1], y[3],
+            y[2], Complex{}};
   }
 };
 
@@ -563,7 +567,7 @@ class SpheroidalSystem {
   using State = Minors<Form>;
   using Bs = BVectors<Form>;
   static constexpr int Jumps = 4;
-  static constexpr std::size_t Components = 4;
+  static constexpr std::size_t Components = 6;
   static constexpr bool IntegrateB = true;
   static constexpr double SignAbove = Form::SignAbove;
   static constexpr double SignBelow = -1;
@@ -679,19 +683,17 @@ class SpheroidalSystem {
   }
 
   // At a receiver the minors and the b-vectors are in the same phase.
-  ScaledVector<4> Solution(const State& minors, const Bs& bs, int jump,
+  ScaledVector<6> Solution(const State& minors, const Bs& bs, int jump,
                            Point point) const {
     if (minors.inFluid) {
       const auto& b = bs.fluid[jump];
-      const auto y =
-          Form::FluidComponents(minors.fluid.value, b.value, context_,
-                                context_(point.layer, point.r));
-      return {{y[0], y[1], y[2], y[3]}, minors.fluid.logScale + b.logScale};
+      return {Form::FluidComponents(minors.fluid.value, b.value, context_,
+                                    context_(point.layer, point.r)),
+              minors.fluid.logScale + b.logScale};
     }
     const auto& b = bs.solid[jump];
-    const auto y =
-        Form::Components(YSpec::Solution(minors.solid.value, b.value));
-    return {{y[0], y[1], y[2], y[3]}, minors.solid.logScale + b.logScale};
+    return {Form::Components(YSpec::Solution(minors.solid.value, b.value)),
+            minors.solid.logScale + b.logScale};
   }
 
  private:
@@ -860,12 +862,20 @@ ResponseTable<ToroidalResponse> RadialSolver::Toroidal(int l,
   const auto raw = impl_->Solve(ToroidalSystem(*impl_, context), omega);
   const auto zeta = context.Zeta();
   auto responses = ResponseTable<ToroidalResponse>(Sources(), Receivers());
-  for (auto source : std::views::iota(std::size_t{0}, Sources())) {
-    for (auto receiver : std::views::iota(std::size_t{0}, Receivers())) {
-      const auto r = Receiver(receiver).r;
+  for (auto receiver : std::views::iota(std::size_t{0}, Receivers())) {
+    const auto point = Receiver(receiver);
+    const auto r = point.r;
+    const auto m = context(point.layer, r);
+    const auto solid = !GetModel().GetLayer(point.layer).IsFluid();
+    for (auto source : std::views::iota(std::size_t{0}, Sources())) {
+      auto& response = responses(source, receiver);
       for (auto j : {0, 1}) {
-        responses(source, receiver).W[j] =
-            raw(source, receiver)[j][0] / (zeta * r);
+        // The scaled variables y1 = zeta r W and y2 = T.
+        const auto& y = raw(source, receiver)[j];
+        response.W[j] = y[0] / (zeta * r);
+        if (solid) {
+          response.DW[j] = y[1] / (zeta * r * m.L) + response.W[j] / r;
+        }
       }
     }
   }
@@ -876,11 +886,18 @@ ResponseTable<RadialResponse> RadialSolver::Radial(Complex omega) const {
   const auto context = Context(GetModel(), 0, omega, Attenuation());
   const auto raw = impl_->Solve(RadialSystem(*impl_, context), omega);
   auto responses = ResponseTable<RadialResponse>(Sources(), Receivers());
-  for (auto source : std::views::iota(std::size_t{0}, Sources())) {
-    for (auto receiver : std::views::iota(std::size_t{0}, Receivers())) {
-      const auto r = Receiver(receiver).r;
-      for (auto j : {0, 1})
-        responses(source, receiver).U[j] = raw(source, receiver)[j][0] / r;
+  for (auto receiver : std::views::iota(std::size_t{0}, Receivers())) {
+    const auto point = Receiver(receiver);
+    const auto r = point.r;
+    const auto m = context(point.layer, r);
+    for (auto source : std::views::iota(std::size_t{0}, Sources())) {
+      auto& response = responses(source, receiver);
+      for (auto j : {0, 1}) {
+        // The scaled variables y1 = r U and y2 = P.
+        const auto& y = raw(source, receiver)[j];
+        response.U[j] = y[0] / r;
+        response.DU[j] = (y[1] / r - 2.0 * m.F * response.U[j] / r) / m.C;
+      }
     }
   }
   return responses;
@@ -907,22 +924,30 @@ ResponseTable<SpheroidalResponse> RadialSolver::Spheroidal(
   };
   const auto raw = solve();
   const auto zeta = context.Zeta();
+  const auto zeta2 = context.Zeta2();
   const auto gravitating = GetGravity() == Gravity::Full;
   auto responses = ResponseTable<SpheroidalResponse>(Sources(), Receivers());
   for (auto receiver : std::views::iota(std::size_t{0}, Receivers())) {
     const auto point = Receiver(receiver);
     const auto r = point.r;
-    const auto rho = GetModel()(point.layer, r).rho;
+    const auto m = context(point.layer, r);
+    const auto solid = !GetModel().GetLayer(point.layer).IsFluid();
     for (auto source : std::views::iota(std::size_t{0}, Sources())) {
       auto& response = responses(source, receiver);
       for (auto j : {0, 1, 2, 3}) {
-        // The scaled variables y1, y2, y3 and y6.
+        // The scaled variables y1, y2, y3 and y6, and the tractions P and S.
         const auto& y = raw(source, receiver)[j];
-        response.U[j] = y[0] / r;
-        response.V[j] = y[1] / (zeta * r);
+        const auto U = y[0] / r;
+        const auto V = y[1] / (zeta * r);
+        response.U[j] = U;
+        response.V[j] = V;
+        response.DU[j] = (y[4] / r - m.F * (2.0 * U - zeta2 * V) / r) / m.C;
+        if (solid) {
+          response.DV[j] = y[5] / (zeta * r * m.L) + (V - U) / r;
+        }
         if (gravitating) {
           response.Phi[j] = y[2] / r;
-          response.DPhi[j] = -4 * PiG * rho * response.U[j] -
+          response.DPhi[j] = -4 * PiG * m.rho * U -
                              (l + 1.0) * response.Phi[j] / r +
                              4 * PiG * y[3] / r;
         }

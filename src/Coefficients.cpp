@@ -142,19 +142,25 @@ Responses Record(const DepthSolves& solves, int l, Complex omega,
     for (auto receiver : std::views::iota(std::size_t{0}, solver.Receivers())) {
       const auto& at = gravity[receiver];
       if (l == 0) {
-        for (auto& u : result.radial(source, receiver).U) {
+        auto& radial = result.radial(source, receiver);
+        for (auto& u : radial.U) {
           // For l = 0 the change in gravity reduces to the free-air term.
           u = derivative(u) - (corrections ? 2 * at.g * u / at.r : 0.0);
         }
+        for (auto& du : radial.DU) du = derivative(du);
         continue;
       }
-      for (auto& w : result.toroidal(source, receiver).W) w = derivative(w);
+      auto& toroidal = result.toroidal(source, receiver);
+      for (auto& w : toroidal.W) w = derivative(w);
+      for (auto& dw : toroidal.DW) dw = derivative(dw);
       auto& spheroidal = result.spheroidal(source, receiver);
       for (auto j : {0, 1, 2, 3}) {
         const auto U = spheroidal.U[j];
         const auto V = spheroidal.V[j];
         spheroidal.U[j] = derivative(U);
         spheroidal.V[j] = derivative(V);
+        spheroidal.DU[j] = derivative(spheroidal.DU[j]);
+        spheroidal.DV[j] = derivative(spheroidal.DV[j]);
         if (!corrections) continue;
         if (full) {
           // The change in gravity at the moving instrument, phi' + U g',
@@ -174,27 +180,32 @@ Responses Record(const DepthSolves& solves, int l, Complex omega,
 
 Coefficients Weight(const Responses& responses, std::size_t sourceDepth,
                     std::size_t receiverDepth, const Context& c,
-                    const ComplexMaterial& atSource,
-                    const MomentTensor& moment) {
+                    const ComplexMaterial& atSource, const MomentTensor& moment,
+                    const Force& force) {
   auto result = Coefficients{};
   const auto l = c.Degree();
   if (l == 0) {
-    const auto& u = responses.radial(sourceDepth, receiverDepth).U;
-    const auto weights = Radial(c, atSource, moment);
-    result.u[0] = weights[0] * u[0] + weights[1] * u[1];
+    const auto& radial = responses.radial(sourceDepth, receiverDepth);
+    const auto weights = Radial(c, atSource, moment, force);
+    result.u[0] = weights[0] * radial.U[0] + weights[1] * radial.U[1];
+    result.du[0] = weights[0] * radial.DU[0] + weights[1] * radial.DU[1];
     return result;
   }
   const auto& toroidal = responses.toroidal(sourceDepth, receiverDepth);
   const auto& spheroidal = responses.spheroidal(sourceDepth, receiverDepth);
-  const auto toroidalWeights = Toroidal(c, atSource, moment);
-  const auto spheroidalWeights = Spheroidal(c, atSource, moment);
+  const auto toroidalWeights = Toroidal(c, atSource, moment, force);
+  const auto spheroidalWeights = Spheroidal(c, atSource, moment, force);
   for (auto m : OrderArray<Complex>::Orders(l)) {
     for (auto j : {0, 1}) {
       result.w[m] += toroidalWeights[m][j] * toroidal.W[j];
+      result.dw[m] += toroidalWeights[m][j] * toroidal.DW[j];
     }
     for (auto j : {0, 1, 2, 3}) {
-      result.u[m] += spheroidalWeights[m][j] * spheroidal.U[j];
-      result.v[m] += spheroidalWeights[m][j] * spheroidal.V[j];
+      const auto weight = spheroidalWeights[m][j];
+      result.u[m] += weight * spheroidal.U[j];
+      result.v[m] += weight * spheroidal.V[j];
+      result.du[m] += weight * spheroidal.DU[j];
+      result.dv[m] += weight * spheroidal.DV[j];
     }
   }
   return result;

@@ -516,9 +516,8 @@ TEST(SolverAcrossBoundaries, GivesNoToroidalResponseOutsideTheSourceRegion) {
   // enough, that does not matter.
   const auto options =
       SolverOptions{.tolerance = 1e-10, .startDecay = 11, .stepFactor = 0.25};
-  const auto solver =
-      RadialSolver(model, {1 - 30e3 / length}, {1 - 100e3 / length},
-                   Gravity::Full, true, options);
+  const auto solver = RadialSolver(model, 1 - 30e3 / length, 1 - 100e3 / length,
+                                   Gravity::Full, true, options);
   const auto all = RadialSolver(model, {1 - 30e3 / length}, radii,
                                 Gravity::Full, true, options);
   const auto omega = Complex(10, -0.2);
@@ -568,8 +567,51 @@ TEST(SolverAcrossBoundaries, ReachesCloseToTheCentre) {
       }
     }
   }
-  EXPECT_THROW((void)RadialSolver(model, {0.5}, {0.0}, Gravity::Full),
+  EXPECT_THROW((void)RadialSolver(model, 0.5, 0.0, Gravity::Full),
                std::invalid_argument);
+}
+
+TEST(SolverAcrossBoundaries, GivesTheRadialDerivatives) {
+  // Against centred differences of the responses, in the mantle and in the
+  // outer core (where only U has a derivative given).
+  const auto model = Model::ReadDeck(kPrem);
+  const auto length = model.GetScales().Length();
+  const auto h = 1e-5;
+  const auto options =
+      SolverOptions{.tolerance = 1e-11, .startDecay = 11, .stepFactor = 0.25};
+  for (auto gravity : {Gravity::None, Gravity::Full}) {
+    for (auto depth : {800e3, 4000e3}) {
+      const auto r = 1 - depth / length;
+      const auto solver =
+          RadialSolver(model, {1 - 30e3 / length}, {r - h, r, r + h}, gravity,
+                       true, options);
+      const auto fluid = model.GetLayer(solver.Receiver(1).layer).IsFluid();
+      const auto omega = Complex(20, -0.3);
+      auto near = [&](Complex derivative, Complex below, Complex above) {
+        const auto difference = (above - below) / (2 * h);
+        EXPECT_NEAR(std::abs(derivative - difference), 0,
+                    1e-5 * std::abs(difference))
+            << "depth " << depth / 1e3 << " km";
+      };
+      const auto spheroidal = solver.Spheroidal(4, omega);
+      const auto toroidal = solver.Toroidal(4, omega);
+      const auto radial = solver.Radial(omega);
+      for (auto j : {0, 1, 2, 3}) {
+        near(spheroidal(0, 1).DU[j], spheroidal(0, 0).U[j],
+             spheroidal(0, 2).U[j]);
+        if (!fluid) {
+          near(spheroidal(0, 1).DV[j], spheroidal(0, 0).V[j],
+               spheroidal(0, 2).V[j]);
+        }
+      }
+      for (auto j : {0, 1}) {
+        near(radial(0, 1).DU[j], radial(0, 0).U[j], radial(0, 2).U[j]);
+        if (!fluid) {
+          near(toroidal(0, 1).DW[j], toroidal(0, 0).W[j], toroidal(0, 2).W[j]);
+        }
+      }
+    }
+  }
 }
 
 }  // namespace

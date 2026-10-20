@@ -16,6 +16,7 @@
  */
 
 #include <YSpec/Types.hpp>
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -66,6 +67,53 @@ class AngularFunctions {
     return (static_cast<std::size_t>(l) * count_ + i) * 5 + (m + 2);
   }
   Angular& Value(Int i, int l, int m) { return values_[Index(i, l, m)]; }
+};
+
+/**
+ * @brief The generalised Legendre functions @f$X^N_{lm}@f$ themselves, for
+ * @f$|N| \le 2@f$, which give the strain, at a set of colatitudes, for
+ * degrees 0 to lMax and orders @f$|m| \le \min(l, 2)@f$ (zero for the
+ * others, and for @f$|N| > l@f$).
+ *
+ * @details With @f$a_N = \sqrt{(l+N)(l-N+1)}@f$ and
+ * @f$b_N = \sqrt{(l-N)(l+N+1)}@f$ they satisfy
+ *
+ * @f[ \partial_\theta X^N = \tfrac12(a_N X^{N-1} - b_N X^{N+1}), \qquad
+ *     \frac{m - N\cos\theta}{\sin\theta} X^N =
+ *     -\tfrac12(a_N X^{N-1} + b_N X^{N+1}). @f]
+ */
+class SpinFunctions {
+ public:
+  /** @brief The values for N = -2, ..., 2. */
+  using Values = std::array<double, 5>;
+
+  /**
+   * @param lMax The largest degree.
+   * @param theta The colatitudes, in @f$[0, \pi]@f$.
+   */
+  SpinFunctions(int lMax, std::vector<double> theta);
+
+  /** @brief The largest degree. */
+  int MaxDegree() const { return lMax_; }
+  /** @brief The number of points. */
+  Int Size() const { return count_; }
+
+  /** @brief The functions at point @p i, degree @p l, order @p m. */
+  const Values& operator()(Int i, int l, int m) const {
+    return values_[Index(i, l, m)];
+  }
+
+ private:
+  int lMax_;
+  Int count_;
+  std::vector<Values> values_;
+
+  template <class Real>
+  void Fill(const std::vector<double>& theta);
+
+  std::size_t Index(Int i, int l, int m) const {
+    return (static_cast<std::size_t>(l) * count_ + i) * 5 + (m + 2);
+  }
 };
 
 }  // namespace YSpec

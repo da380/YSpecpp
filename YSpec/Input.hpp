@@ -45,7 +45,9 @@
  *
  * "gravity" is one of "none", "cowling" and "full"; "quantity" one of
  * "displacement", "velocity" and "acceleration". The moment tensor is in
- * spherical coordinates at the source (r up, theta south, phi east).
+ * spherical coordinates at the source (r up, theta south, phi east). A source
+ * may have instead, or as well, a force, "force_N": { "r": 0, "t": 0,
+ * "p": 1e12 }, in the same coordinates, whose members default to zero.
  * Locations are [latitude, longitude] in geographic degrees. The filter is a
  * raised-cosine taper rising between its first two corners and falling
  * between its last two; it may be left out. "attenuation", "gravity", the

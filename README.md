@@ -101,9 +101,10 @@ The calculation is read from a JSON file:
 - `filter_mHz`: an optional raised-cosine taper, rising from zero to one
   between its first two corners and falling back between its last two.
 - `sources`: one or more, each with its hypocentre (geographic latitude) and
-  its moment tensor in spherical coordinates at the source (r up, theta south,
-  phi east), for a step in moment at the origin time. Sources at one depth
-  share the radial solves, so extra ones cost little. The optional `name`
+  its moment tensor `moment_tensor_Nm`, a point force `force_N` (members
+  `r`, `t`, `p`, each defaulting to zero), or both, in spherical coordinates
+  at the source (r up, theta south, phi east), as a step at the origin time.
+  Sources at one depth share the radial solves, so extra ones cost little. The optional `name`
   labels the output files when there are several sources (by default the
   sources are numbered from 1).
 - `receivers`: a group of receivers, or an array of groups (see below). They
@@ -279,8 +280,13 @@ const auto z = seismograms.Trace(0, 0, YSpec::Vertical);
 
 Sources may be at any depths in one solid region of the model (below an
 ocean, for instance, and above the core), and receivers anywhere but at the
-centre. The radial integrations are shared by all of them: several sources, or receivers at several depths,
-cost little more than one. A receiver may carry an `Instrument`, read from a
+centre. The radial integrations are shared by all of them: several sources,
+or receivers at several depths, cost little more than one. A source may be a
+moment tensor, a point force (`YSpec::Force`) or both, and
+`YSpec::ComputeStrains` gives seismograms of the strain tensor instead of the
+displacement, as strainmeters and fibre-optic cables record; strain and
+displacement satisfy reciprocity with each other to 1e-8, which the tests
+check. A receiver may carry an `Instrument`, read from a
 SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
 gives lines of receivers along great circles.
 
