@@ -86,6 +86,10 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-# Apple's clang has no OpenMP: the macOS wheels run on one thread.
-config-settings = { "cmake.define.YSPEC_WITH_OPENMP" = "OFF" }
-environment = { MACOSX_DEPLOYMENT_TARGET = "14.0" }
+# Apple's clang is missing C++23 library pieces the code uses
+# (views::cartesian_product, floating-point from_chars), so the macOS wheel
+# is built with GCC, as everywhere else — which also brings OpenMP; delocate
+# bundles libstdc++ and libgomp into the wheel. ARCHFLAGS must be empty:
+# GCC takes no -arch flag, and the build is natively arm64 anyway.
+before-all = "brew install gcc@14"
+environment = { CC = "gcc-14", CXX = "g++-14", MACOSX_DEPLOYMENT_TARGET = "14.0", ARCHFLAGS = "" }

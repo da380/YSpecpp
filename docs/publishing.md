@@ -11,7 +11,7 @@ What a release puts on PyPI:
 |------|-----|
 | `yspec_seismo-X.Y.Z-cp312-abi3-manylinux_2_28_x86_64.whl` | Linux, Intel/AMD, glibc 2.28 or later |
 | `yspec_seismo-X.Y.Z-cp312-abi3-manylinux_2_28_aarch64.whl` | Linux, ARM |
-| `yspec_seismo-X.Y.Z-cp312-abi3-macosx_14_0_arm64.whl` | macOS 14 or later on Apple silicon (one thread) |
+| `yspec_seismo-X.Y.Z-cp312-abi3-macosx_14_0_arm64.whl` | macOS 14 or later on Apple silicon |
 | `yspec_seismo-X.Y.Z.tar.gz` | everything else: pip compiles it (C++23 compiler, CMake, network) |
 
 Each wheel serves Python 3.12 and every later Python.
