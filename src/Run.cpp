@@ -244,7 +244,9 @@ bool WritesModelFiles() {
 
 namespace {
 
-// The dimensions of a parameter, as exponents of mass, length and time.
+#ifdef PLANETMODEL_WITH_NETCDF
+// The dimensions of a parameter, as exponents of mass, length and time, which
+// a model file records.
 std::array<int, 3> DimensionsOf(std::string_view name) {
   if (name == "rho") return {1, -3, 0};
   for (auto modulus : {"A", "C", "F", "L", "N", "kappa", "mu"}) {
@@ -253,6 +255,7 @@ std::array<int, 3> DimensionsOf(std::string_view name) {
   if (name.starts_with('v')) return {0, 1, -1};
   return {0, 0, 0};
 }
+#endif
 
 std::string_view QuantityName(Quantity quantity) {
   switch (quantity) {

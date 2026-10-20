@@ -11,6 +11,7 @@
 #include "Coefficients.hpp"
 #include "Geometry.hpp"
 #include "OrderArray.hpp"
+#include "Report.hpp"
 #include "Spectra.hpp"
 #include "TimeSeries.hpp"
 
@@ -235,9 +236,13 @@ Spectra ComputeSpectra(const Model& model, const Calculation& calculation,
       Spectra(sources.size(), receiverCount, components, frequencyCount);
   auto done = std::atomic<std::size_t>{0};
   auto error = std::exception_ptr{};
+  // Once a frequency fails the rest are skipped, and the error is thrown
+  // when the loop ends.
+  auto failed = std::atomic<bool>{false};
 
 #pragma omp parallel for schedule(dynamic)
   for (long index = 0; index < static_cast<long>(frequencyCount); ++index) {
+    if (failed) continue;
     try {
       const auto frequency = static_cast<std::size_t>(index);
       const auto omega = grid.Omega(frequency);
@@ -268,11 +273,9 @@ Spectra ComputeSpectra(const Model& model, const Calculation& calculation,
         }
       }
       const auto finished = ++done;
-      if (progress) {
-#pragma omp critical(YSpecProgress)
-        progress(finished, frequencyCount);
-      }
+      Report(progress, finished, frequencyCount);
     } catch (...) {
+      failed = true;
 #pragma omp critical(YSpecError)
       if (!error) error = std::current_exception();
     }

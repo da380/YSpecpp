@@ -36,21 +36,14 @@ run() {
   "$executable" "$@"
 }
 
-# Plots with yspec-plot: from the PATH if it is there (in an activated
-# environment, say), else through the poetry project in plotting/, found from
-# YSPEC_PLOTTING, from the sources the build was made from, or beside these
-# examples.
+# Plots with yspec-plot, which the Python package installs with its plot
+# extra: from the PATH, in an activated environment, say.
 plot() {
   if command -v yspec-plot > /dev/null; then
     yspec-plot "$@"
-    return
-  fi
-  project=${YSPEC_PLOTTING:-${YSPEC_SOURCE_DIR:-../..}/plotting}
-  if command -v poetry > /dev/null &&
-    poetry -P "$project" run yspec-plot --help > /dev/null 2>&1; then
-    poetry -P "$project" run yspec-plot "$@"
   else
-    echo "not plotting: set up the plotting environment with" \
-      "'poetry -P $project install'" >&2
+    echo "not plotting: install the Python package with its plotting," \
+      "pip install -e '${YSPEC_SOURCE_DIR:-../..}[plot]', in an environment" \
+      "on the PATH" >&2
   fi
 }

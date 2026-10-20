@@ -5,7 +5,7 @@ Sdiff at 110 degrees, each phase measured in a window about its arrival in
 PREM, from TauP, one dominant period before it and one and a half after, with
 tapers of half a period.
 
-    poetry -P ../../plotting run python make_input.py
+    python make_input.py    # in an environment with yspec-seismo[obspy]
 
 The inputs beside it were written so, and the example runs without it; this
 is how to change the phases, the distances or the bands.

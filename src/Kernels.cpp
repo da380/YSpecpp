@@ -16,6 +16,7 @@
 #include "Geometry.hpp"
 #include "KernelParts.hpp"
 #include "OrderArray.hpp"
+#include "Report.hpp"
 #include "SourceWeights.hpp"
 #include "Spectra.hpp"
 #include "TimeSeries.hpp"
@@ -487,6 +488,9 @@ std::vector<RadialAccumulation> AccumulateRadial(
   auto totalAtSource = std::vector<Accumulator>(count);
   auto done = std::atomic<std::size_t>{0};
   auto error = std::exception_ptr{};
+  // Once a frequency fails the rest are skipped, and the error is thrown
+  // when the loop ends.
+  auto failed = std::atomic<bool>{false};
 
 #pragma omp parallel
   {
@@ -500,6 +504,7 @@ std::vector<RadialAccumulation> AccumulateRadial(
     auto productsAtSource = std::vector<Products>(bases);
 #pragma omp for schedule(dynamic)
     for (long index = 0; index < static_cast<long>(grid.Count()); ++index) {
+      if (failed) continue;
       try {
         const auto k = static_cast<std::size_t>(index);
         const auto wanted = std::ranges::any_of(
@@ -567,11 +572,9 @@ std::vector<RadialAccumulation> AccumulateRadial(
           }
         }
         const auto finished = ++done;
-        if (progress) {
-#pragma omp critical(YSpecProgress)
-          progress(finished, grid.Count());
-        }
+        Report(progress, finished, grid.Count());
       } catch (...) {
+        failed = true;
 #pragma omp critical(YSpecError)
         if (!error) error = std::current_exception();
       }

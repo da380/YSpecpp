@@ -14,12 +14,16 @@ implemented exactly at complex frequency rather than to first order in 1/Q.
 Gravity can be left out, included in the Cowling approximation, or included
 in full.
 
+It is a C++ library with three programs, and a Python package,
+`yspec-seismo` (see [Python](#python)).
+
 ## Building
 
 YSpec needs a C++23 compiler (GCC 13 or Clang 18 and later), CMake 3.24 or
-later, FFTW3 (in double, single and long double precision, as FFTWpp requires),
-netCDF-C for writing three-dimensional kernels (`-DYSPEC_WITH_NETCDF=OFF` builds
-without it), and optionally OpenMP. Everything else is fetched by CMake:
+later, FFTW3 (in double, single and long double precision, as FFTWpp
+requires; or none, with pocketfft, below), netCDF-C for writing
+three-dimensional kernels (`-DYSPEC_WITH_NETCDF=OFF` builds without it), and
+optionally OpenMP. Everything else is fetched by CMake:
 [NumericConcepts](https://github.com/da380/NumericConcepts),
 [Interpolation](https://github.com/da380/Interpolation),
 [FFTWpp](https://github.com/da380/FFTWpp),
@@ -37,7 +41,11 @@ ctest --test-dir build
 To build against local checkouts of the dependencies instead of fetching
 them, pass `-DFETCHCONTENT_SOURCE_DIR_<NAME>=/path/to/checkout` for each
 (`GSHTRANS`, `INTERPOLATION`, ...). `-DYSPEC_WITH_OPENMP=OFF` builds a serial
-version, which gives the same results.
+version, which gives the same results. `-DYSPEC_FFT=pocketfft` (the preset
+`pocketfft`) makes YSpec's one Fourier transform, of each spectrum to its
+time series, with [pocketfft](https://github.com/mreineck/pocketfft) instead
+of FFTW, and needs no FFTW at all; the results agree to rounding. The Python
+wheels are built so: FFTW is GPL, and a wheel carries the libraries it uses.
 
 ## Running
 
@@ -95,15 +103,20 @@ minutes, and writes its output and figures in its own directory. The
 programs are found in the build, on the `PATH`, or in
 `YSPEC_BIN`.
 
-The figures are drawn by `yspec-plot`, a small Python package in `plotting/`
-built on [planetmodel](https://github.com/da380/planetmodel), whose sections
-and colour scales it shares, with maps through cartopy. Its environment is
-made once with poetry:
+The figures are drawn by `yspec-plot`, which the Python package installs
+with its `plot` extra (see [Python](#python)), built on
+[planetmodel](https://github.com/da380/planetmodel), whose sections and
+colour scales it shares, with maps through cartopy. The scripts find it on
+the `PATH`:
 
 ```sh
-poetry -P plotting install
-poetry -P plotting run yspec-plot section build/examples/record-section/input.json
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[plot]"
+yspec-plot section build/examples/record-section/input.json
 ```
+
+The package installs the programs too, so the examples also run with it
+alone, without the C++ build.
 
 `yspec-plot` takes the input file of a run and finds the output from it:
 `section` draws a record section, `traces` the components at a few receivers,
@@ -520,6 +533,53 @@ write it. `YSpec::RadialSolver` gives the
 responses to unit jumps at a set of source radii, at a set of receiver radii,
 for one degree and frequency.
 
+## Python
+
+The Python package, `yspec-seismo`, is imported as `yspec`. It gives the
+library from Python, with numpy arrays for its results, and installs the
+programs, the PREM decks of the examples and, with the `plot` extra,
+`yspec-plot`:
+
+```python
+import numpy as np
+import yspec
+
+model = yspec.Model.prem()
+source = yspec.Source(latitude=36.87, longitude=35.58, depth_km=29.5,
+                      moment_tensor=dict(rr=4.22e17, rt=3.08e17, rp=6.99e17,
+                                         tt=-2.976e18, tp=6.54e17, pp=2.55e18))
+receivers = yspec.great_circle(source, azimuth_deg=60,
+                               distances_deg=np.arange(5, 180, 5))
+calculation = yspec.Calculation(degrees=300, frequencies_mhz=(0.2, 15),
+                                length_min=60, filter_mhz=(1, 2, 12, 15),
+                                quantity="velocity")
+seismograms = yspec.seismograms(model, calculation, source, receivers,
+                                progress=True)
+seismograms.data   # [source, receiver, component, sample]: Z, N and E
+```
+
+It has seismograms and strains, snapshots, traveltimes and their radial and
+three-dimensional kernels, in the units of the input files (km, degrees,
+mHz, s); `python/README.md` is its page on PyPI. It is built by
+[nanobind](https://github.com/wjakob/nanobind) and
+[scikit-build-core](https://github.com/scikit-build/scikit-build-core) from
+`pyproject.toml`, with the module in `python/src/bindings.cpp`, the Python
+around it in `python/yspec` and its tests in `python/tests`:
+
+```sh
+pip install -e ".[plot,obspy,test]"   # from the sources, rebuilt on reinstall
+pytest
+```
+
+The calculations release Python's lock and run on the library's threads;
+Ctrl-C, or an exception from a progress callback, stops one at the next
+frequency to finish. The wheels, for Linux (x86_64 and aarch64) and macOS
+(arm64, on one thread, as Apple's compiler has no OpenMP), are built by
+`.github/workflows/wheels.yml` with cibuildwheel and published to PyPI when
+a tag `v*` is pushed. They are built with pocketfft and without netCDF, so
+`volume` kernels are not written as model files from them; sections and
+maps are.
+
 ## Differences from the Fortran YSpec
 
 - Input is JSON instead of a parameter file read by counting lines.
@@ -561,7 +621,8 @@ displacement by differences and reciprocity, kernels against finite
 differences of their measurement in every treatment of gravity); and four
 end-to-end cases compared with the Fortran's seismograms.
 The scripts in `tests/fortran` regenerate the reference data from a checkout
-of the Fortran YSpec.
+of the Fortran YSpec. `pytest` runs the Python package's tests, which check
+it against the programs' input files, through the same library.
 
 ## References
 

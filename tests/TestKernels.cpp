@@ -159,8 +159,9 @@ class Check {
     const auto window = Window{.start = 700, .end = 1500, .taper = 200};
     measurement_ = Traveltime(model_, calculation_, TheSource(), TheReceiver(),
                               direction, window);
-    kernels_ = ComputeRadialKernels(model_, calculation_, TheSource(),
-                                    measurement_, {.order = 5, .maxElement = 20e3});
+    kernels_ =
+        ComputeRadialKernels(model_, calculation_, TheSource(), measurement_,
+                             {.order = 5, .maxElement = 20e3});
   }
 
   // The change predicted by the kernels, and that by central differences.
