@@ -171,13 +171,25 @@ The calculation is read from a JSON file:
   acceleration: it adds the change in gravity seen by an instrument that moves
   with the ground, and the tilt of its axis (default `false`).
 - `degrees`: the spherical harmonic degrees summed (`min` defaults to 0).
-  Enough are needed for the fundamental surface waves at the highest
-  frequency, l ≈ 2πfa/c, about 10 for each mHz, even where only body waves
-  are wanted: cut off below that, the surface waves are cut off in frequency
-  where their branches pass the last degree, and the tails of that cut run
-  through the whole record. The near field of a shallow source converges
-  only beyond l ≈ a/d, d its depth; what is cut off of it appears as a pulse
-  at the origin time, at any distance.
+  What the last degree cuts off is cut off sharply, and the tail of the cut
+  runs through the whole record, so enough are needed for two things, the
+  larger setting `max`:
+  - the fundamental surface waves at the highest frequency, l ≈ 2πfa/c,
+    about 10 for each mHz, even where only body waves are wanted;
+  - the near field of a shallow source, whose terms fall off as
+    e^(−l Δd/a), Δd the difference in depth between the source and the
+    receiver: n a/Δd, with n about 6 in bands that reach down to 1 mHz, 8
+    at the longest periods, and 2 at higher frequencies if the first few
+    minutes do not matter (a/Δd ≈ 240 for the examples' source, 29.5 km
+    deep, and receivers at the sea floor). What is cut off of it is a pulse
+    at the origin time, at any distance, which a narrow low ramp of the
+    filter spreads through the record. Doubling `max` and seeing whether the
+    start of the record moves is the check.
+
+  Receivers belong at the sea floor or below. In the water, with gravity,
+  the ocean's surface-gravity waves (tsunamis), about 250 degrees for each
+  mHz and far more above 5 mHz, would be needed as well; cut off, they swamp
+  the horizontal motion there.
 - `frequencies_mHz`: the band computed; `time_series` the length of the
   seismograms and their sampling. The Nyquist frequency must lie above the
   highest frequency; without `time_step_s` the step is a quarter of the
@@ -276,10 +288,8 @@ points to rounding error. The example above, at degrees to 300 and up to 15
 mHz, takes about 3 s on 4 threads, and the same section through the whole
 earth, from the sea surface to near the centre, about 4 s.
 
-With gravity, the free surface of an ocean carries surface-gravity waves
-(tsunamis), which are slow and outlast most time series: on and near the sea
-surface they can wrap around in time, and appear early. A longer time series,
-or points below the sea surface, avoid that.
+With gravity, points in an ocean need far more degrees than points in the
+solid, for the ocean's surface-gravity waves: see `degrees` above.
 
 ### Kernels
 

@@ -2,7 +2,7 @@
   "model": "../prem.200",
   "gravity": "cowling",
   "output": { "prefix": "cowling", "quantity": "displacement" },
-  "degrees": { "max": 60 },
+  "degrees": { "max": 2000 },
   "frequencies_mHz": { "min": 0.1, "max": 3 },
   "time_series": { "length_min": 300, "time_step_s": 30 },
   "filter_mHz": [0.1, 0.2, 2.5, 3],
