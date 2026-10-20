@@ -3,9 +3,8 @@
 # in a plain CMake build (-DYSPEC_PYTHON=ON), nanobind is found through the
 # Python that CMake finds, which must have it installed.
 
-find_package(Python 3.10 REQUIRED
-  COMPONENTS Interpreter Development.Module
-  OPTIONAL_COMPONENTS Development.SABIModule)
+find_package(Python 3.12 REQUIRED
+  COMPONENTS Interpreter Development.Module Development.SABIModule)
 
 if(NOT nanobind_ROOT)
   execute_process(
@@ -15,8 +14,7 @@ if(NOT nanobind_ROOT)
 endif()
 find_package(nanobind CONFIG REQUIRED)
 
-# The stable ABI where Python has one for nanobind (3.12 on), so that one
-# wheel serves every later Python too.
+# The stable ABI of Python 3.12, so that one wheel serves every later Python.
 nanobind_add_module(_core STABLE_ABI NB_STATIC src/bindings.cpp)
 target_link_libraries(_core PRIVATE YSpec::YSpec)
 target_compile_definitions(_core PRIVATE YSPEC_VERSION="${PROJECT_VERSION}")

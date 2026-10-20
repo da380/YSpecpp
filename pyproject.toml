@@ -16,7 +16,8 @@ readme = "python/README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "David Al-Attar" }]
-requires-python = ">=3.10"
+# planetmodel, which draws the figures, needs 3.12.
+requires-python = ">=3.12"
 dependencies = ["numpy>=1.24"]
 keywords = ["seismology", "synthetic seismograms", "normal modes", "sensitivity kernels"]
 classifiers = [
@@ -51,7 +52,7 @@ cmake.version = ">=3.24"
 cmake.build-type = "Release"
 build-dir = "build/python/{wheel_tag}"
 wheel.packages = ["python/yspec"]
-# The stable ABI from Python 3.12, for which nanobind supports it.
+# The stable ABI of Python 3.12, so that one wheel serves every later Python.
 wheel.py-api = "cp312"
 sdist.exclude = ["docs/papers", "build", "tests/fortran", ".github"]
 
@@ -63,6 +64,7 @@ YSPEC_BUILD_PROGRAMS = "OFF"
 YSPEC_BUILD_EXAMPLES = "OFF"
 YSPEC_BUILD_TESTS = "OFF"
 
+# The version is CMake's project version, the one place it is set.
 [tool.scikit-build.metadata.version]
 provider = "scikit_build_core.metadata.regex"
 input = "CMakeLists.txt"
@@ -72,7 +74,7 @@ regex = 'project\(YSpec\s+VERSION\s+(?P<value>[0-9.]+)'
 testpaths = ["python/tests"]
 
 [tool.cibuildwheel]
-build = "cp310-* cp311-* cp312-*"
+build = "cp312-*"
 skip = "*-musllinux_*"
 test-extras = ["test"]
 test-command = "pytest {project}/python/tests"

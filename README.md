@@ -576,7 +576,7 @@ Ctrl-C, or an exception from a progress callback, stops one at the next
 frequency to finish. The wheels, for Linux (x86_64 and aarch64) and macOS
 (arm64, on one thread, as Apple's compiler has no OpenMP), are built by
 `.github/workflows/wheels.yml` with cibuildwheel and published to PyPI when
-a tag `v*` is pushed. They are built with pocketfft and without netCDF, so
+a tag `v*` is pushed, as `docs/publishing.md` describes. They are built with pocketfft and without netCDF, so
 `volume` kernels are not written as model files from them; sections and
 maps are.
 
