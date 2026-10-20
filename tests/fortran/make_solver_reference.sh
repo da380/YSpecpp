@@ -7,10 +7,11 @@
 #
 # The Fortran is exported at the given commit (default a3ae638, the cleaned
 # code), its step density raised sixteen-fold (nw = 4 -> 64) so that it is
-# accurate to about 1e-8, and two of its l = 0 bugs patched for the no-gravity
-# cases (see WORKLOG.md): rad_derivs_ng keeps a gravity term, and rad_solver_ng
-# starts at the sea floor when the receiver is below the source. The second is
-# not patched; those l = 0 lines are left out instead.
+# accurate to about 1e-8. Two of its faults affect l = 0 without gravity:
+# rad_derivs_ng keeps the gravity term of rad_amat, which is patched out here;
+# and rad_solver_ng starts its downward integration at the sea floor, not the
+# surface, when the receiver is below the source, which is not patched: those
+# l = 0 lines are left out instead.
 set -euo pipefail
 yspec=$(realpath "$1")
 commit=${2:-a3ae638}

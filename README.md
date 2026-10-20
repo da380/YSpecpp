@@ -104,7 +104,6 @@ The calculation is read from a JSON file:
   integration starts (default 11).
 
 A member not listed here is an error, so that a misspelt one is not ignored.
-`tools/legacy_to_json.py` converts a parameter file of the Fortran YSpec.
 
 ## Accuracy and speed
 
@@ -221,3 +220,7 @@ of the Fortran YSpec.
 - Al-Attar, D. & Woodhouse, J. H., 2008. Calculation of seismic displacement
   fields in self-gravitating earth models -- applications of minors vectors
   and symplectic structure. Geophys. J. Int., 175, 1176-1208.
+
+## Licence
+
+BSD 3-Clause; see `LICENSE`.
