@@ -43,10 +43,7 @@ set(YSPEC_GAUSSQUAD_TAG 7d4786d192f68077cd99a34dcdf1379ed1eeac9a
     CACHE STRING "GaussQuad revision")
 set(YSPEC_GSHTRANS_TAG 8dd116df8df4222fe9b10a40c7213d34f2a274fb
     CACHE STRING "GSHTrans revision")
-# No release of planetmodel contains its C++ library yet, so this is a commit
-# on its main branch.
-set(YSPEC_PLANETMODEL_TAG fa6e230fde25152d40f27d9839de44c4f3182a24
-    CACHE STRING "planetmodel revision")
+set(YSPEC_PLANETMODEL_TAG v1.3.0 CACHE STRING "planetmodel revision")
 mark_as_advanced(YSPEC_NUMERICCONCEPTS_TAG YSPEC_INTERPOLATION_TAG
                  YSPEC_FFTWPP_TAG YSPEC_GAUSSQUAD_TAG YSPEC_GSHTRANS_TAG
                  YSPEC_PLANETMODEL_TAG)
@@ -158,16 +155,21 @@ endforeach()
 include(GNUInstallDirs)
 install(TARGETS ${YSPEC_PROGRAMS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# The example inputs and models, copied into the build tree, so that from the
-# build directory `bin/yspec examples/input.json` runs and writes its output
-# there rather than in the sources. They are copied again when they change.
+# The examples -- inputs, models and the scripts that run them -- copied into
+# the build tree, so that from the build directory
+# `bin/yspec examples/input.json`, or `examples/record-section/run.sh`, runs
+# and writes its output there rather than in the sources. They are copied
+# again when they change.
 if(PROJECT_IS_TOP_LEVEL)
-  file(GLOB YSPEC_EXAMPLE_FILES CONFIGURE_DEPENDS
+  file(GLOB_RECURSE YSPEC_EXAMPLE_FILES CONFIGURE_DEPENDS
+    RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/examples
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.sh
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.pz
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/prem.*)
   set(YSPEC_EXAMPLE_COPIES)
-  foreach(file IN LISTS YSPEC_EXAMPLE_FILES)
-    get_filename_component(name ${file} NAME)
+  foreach(name IN LISTS YSPEC_EXAMPLE_FILES)
+    set(file ${CMAKE_CURRENT_SOURCE_DIR}/examples/${name})
     set(copy ${CMAKE_CURRENT_BINARY_DIR}/examples/${name})
     add_custom_command(OUTPUT ${copy}
       COMMAND ${CMAKE_COMMAND} -E copy_if_different ${file} ${copy}
@@ -175,6 +177,9 @@ if(PROJECT_IS_TOP_LEVEL)
       COMMENT "Copying examples/${name}")
     list(APPEND YSPEC_EXAMPLE_COPIES ${copy})
   endforeach()
+  # And where the sources are, for the scripts to find the plotting project.
+  file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/examples/source.sh
+    CONTENT "YSPEC_SOURCE_DIR=\"@PROJECT_SOURCE_DIR@\"\n" @ONLY)
   add_custom_target(examples ALL DEPENDS ${YSPEC_EXAMPLE_COPIES})
 endif()
 

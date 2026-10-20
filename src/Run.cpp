@@ -2,8 +2,11 @@
 #include <YSpec/Run.hpp>
 #include <format>
 #include <fstream>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
+
+#include "Geometry.hpp"
 
 namespace YSpec {
 
@@ -14,15 +17,56 @@ Seismograms ComputeSeismograms(const SeismogramInput& input,
                             input.receivers, progress);
 }
 
+namespace {
+
+// The file of the seismograms of a source at a receiver.
+std::filesystem::path SeismogramPath(const SeismogramInput& input,
+                                     std::size_t sources, std::size_t source,
+                                     std::size_t receiver) {
+  auto path = input.prefix;
+  path += sources == 1
+              ? std::format(".{}", receiver + 1)
+              : std::format(".{}.{}", input.names.at(source), receiver + 1);
+  return path;
+}
+
+// A table of the seismogram files, one line for each source and receiver:
+// where the receiver is, and where it is seen from the source.
+void WriteReceivers(const SeismogramInput& input, std::size_t sources) {
+  auto path = input.prefix;
+  path += ".receivers";
+  auto file = std::ofstream(path);
+  if (!file) throw std::runtime_error("cannot write " + path.string());
+  file << "# file source latitude longitude depth_km distance_deg "
+          "azimuth_deg back_azimuth_deg\n";
+  for (auto source = std::size_t{0}; source < sources; ++source) {
+    for (auto receiver = std::size_t{0}; receiver < input.receivers.size();
+         ++receiver) {
+      const auto& at = input.receivers[receiver];
+      const auto view = Geometry(at.location, input.sources[source].location);
+      const auto degree = std::numbers::pi / 180;
+      file << std::format(
+          "{} {} {:10.4f}{:10.4f}{:10.3f}{:10.4f}{:10.4f}{:10.4f}\n",
+          SeismogramPath(input, sources, source, receiver).filename().string(),
+          input.names.at(source), at.location.latitude, at.location.longitude,
+          at.depth / 1e3, view.distance / degree,
+          (std::numbers::pi - view.phi) / degree,
+          (2 * std::numbers::pi - view.rotation) / degree);
+    }
+  }
+  if (!file) throw std::runtime_error("cannot write " + path.string());
+}
+
+}  // namespace
+
 void WriteSeismograms(const Seismograms& seismograms,
                       const SeismogramInput& input) {
+  WriteReceivers(input, seismograms.Sources());
   for (auto source = std::size_t{0}; source < seismograms.Sources(); ++source) {
     for (auto receiver = std::size_t{0}; receiver < seismograms.Receivers();
          ++receiver) {
-      auto path = input.prefix;
-      path += seismograms.Sources() == 1
-                  ? std::format(".{}", receiver + 1)
-                  : std::format(".{}.{}", input.names.at(source), receiver + 1);
+      const auto path =
+          SeismogramPath(input, seismograms.Sources(), source, receiver);
       auto file = std::ofstream(path);
       if (!file) throw std::runtime_error("cannot write " + path.string());
       const auto vertical = seismograms.Trace(source, receiver, Vertical);

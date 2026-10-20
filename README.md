@@ -58,7 +58,52 @@ written per receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the
 receivers are listed; with several sources, one per source and receiver,
 `<prefix>.<source>.1`, .... Each line holds the time after the origin time (s)
 and the vertical (up), north and east components, in SI units of the quantity
-asked for, or in the units of the instrument's output where there is one.
+asked for, or in the units of the instrument's output where there is one. A
+table `<prefix>.receivers` lists the files, one line for each source and
+receiver: the receiver's latitude, longitude and depth (km), and its distance,
+its azimuth at the source and the source's azimuth at it (degrees).
+
+### Examples and plotting
+
+Each directory of `examples/` holds an example, with its input and a script
+that runs it and plots the result:
+
+| example | program | what it shows |
+|---------|---------|---------------|
+| `record-section` | `yspec` | velocity every 5 degrees along a great circle, vertical and transverse |
+| `instrument` | `yspec` | one place recorded twice: the ground displacement, and a seismometer's output in counts |
+| `depths` | `yspec` | one place at depths from the sea floor to the inner core |
+| `gravity` | `yspec` | a long-period seismogram without gravity, in the Cowling approximation and in full |
+| `force` | `yspec` | the waves from a point force, of the kind a landslide exerts |
+| `cross-section` | `yspec-snapshot` | the wavefield on a great circle through the whole earth at six times |
+| `map` | `yspec-snapshot` | the wavefield at the sea floor around the source, over the whole globe |
+
+```sh
+cd build
+examples/record-section/run.sh     # or examples/run-all.sh for all of them
+```
+
+Each takes seconds on four threads (the scripts use four unless
+`OMP_NUM_THREADS` says otherwise), and writes its output and figures in its
+own directory. The programs are found in the build, on the `PATH`, or in
+`YSPEC_BIN`.
+
+The figures are drawn by `yspec-plot`, a small Python package in `plotting/`
+built on [planetmodel](https://github.com/da380/planetmodel), whose sections
+and colour scales it shares, with maps through cartopy. Its environment is
+made once with poetry:
+
+```sh
+poetry -P plotting install
+poetry -P plotting run yspec-plot section build/examples/record-section/input.json
+```
+
+`yspec-plot` takes the input file of a run and finds the output from it:
+`section` draws a record section, `traces` the components at a few receivers,
+`compare` one receiver in several runs, and `snapshot` a section through the
+earth or a map around the source. The components of seismograms are Z, N and
+E, or R and T, radial and transverse to the source. Without `-o` the figure is
+shown.
 
 ### Input
 

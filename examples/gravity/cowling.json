@@ -1,0 +1,19 @@
+{
+  "model": "../prem.200",
+  "gravity": "cowling",
+  "output": { "prefix": "cowling", "quantity": "displacement" },
+  "degrees": { "max": 60 },
+  "frequencies_mHz": { "min": 0.1, "max": 3 },
+  "time_series": { "length_min": 300, "time_step_s": 30 },
+  "filter_mHz": [0.1, 0.2, 2.5, 3],
+  "sources": [
+    { "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
+      "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
+                            "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 } }
+  ],
+  "receivers": {
+    "depth_km": 3,
+    "profile": { "from": [36.87, 35.58], "azimuth_deg": 60,
+                 "distances_deg": [60, 60], "count": 1 }
+  }
+}

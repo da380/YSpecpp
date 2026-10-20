@@ -6,6 +6,8 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <numbers>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -56,6 +58,34 @@ TEST(Run, WritesASeismogramFilePerSourceAndReceiver) {
       EXPECT_EQ(count, seismograms.Samples());
     }
   }
+  // And the table of where the receivers are seen from the sources: from
+  // source a, at the origin, the receiver at geographic latitude 20 and
+  // longitude 30 is at the distance of its geocentric latitude.
+  auto table = std::ifstream(directory / "out.receivers");
+  ASSERT_TRUE(table);
+  auto line = std::string{};
+  std::getline(table, line);
+  EXPECT_EQ(line.front(), '#');
+  auto rows = 0;
+  for (; std::getline(table, line); ++rows) {
+    auto row = std::istringstream(line);
+    auto file = std::string{};
+    auto source = std::string{};
+    auto values = std::array<double, 6>{};
+    row >> file >> source;
+    for (auto& value : values) row >> value;
+    ASSERT_TRUE(row) << line;
+    EXPECT_TRUE(fs::exists(directory / file)) << file;
+    if (rows == 0) {
+      EXPECT_EQ(file, "out.a.1");
+      const auto degree = std::numbers::pi / 180;
+      const auto latitude = std::atan(0.993277 * std::tan(20 * degree));
+      EXPECT_NEAR(
+          values[3],
+          std::acos(std::cos(latitude) * std::cos(30 * degree)) / degree, 1e-3);
+    }
+  }
+  EXPECT_EQ(rows, 4);
 }
 
 TEST(Run, WritesASnapshotFilePerTime) {
