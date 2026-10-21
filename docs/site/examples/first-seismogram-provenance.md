@@ -16,3 +16,18 @@ result.
 - Column meanings: time (s), up displacement (m), north displacement (m), east displacement (m). The vertical peak absolute amplitude is `4.344679e-6 m`; all values were finite and the trace was nonzero.
 - Plot library: Matplotlib 3.6.3. The plot script sets a fixed SVG hash salt for reproducible element IDs and removes only trailing horizontal whitespace while preserving line endings. Plot SHA-256: `925f2609ad95bab8d498edcdca73a3ba1add470780bb8c267ff7f7e5878abe61`.
 - Plot command from repository root: `python3 docs/site/examples/plot_first_seismogram.py build/first-seismogram/first-seismogram.out.1 build/first-seismogram/first-seismogram.svg`.
+
+## Frozen-main reproduction
+
+The following run was made during the 21 October 2026 documentation campaign
+from the exact current manual source tree. It preserves the earlier provenance
+above rather than relabeling that historical run. The saved trace and SVG
+bytes match the earlier files; byte identity alone does not establish that the
+earlier provenance applies to this run.
+
+- Source: `0bc9417fd7a7b38f0987e69969a77ac226522faa` (frozen main selected for this campaign).
+- Platform/compiler: Ubuntu 24.04; GCC 13.3.0 (`g++-13`); CMake 3.28.3; FFTW 3.3.10; OpenMP 4.5.
+- Build: Release, `YSPEC_BUILD_TESTS=OFF`, OpenMP enabled, FFTW, NetCDF disabled; at most two build jobs. Pinned source dependencies were reused from this campaign checkout's build cache. This was not a cold configure.
+- Dependency revisions: NumericConcepts `e03a2889d43a03660d0879f46dda1406d90c9517`; Interpolation `d5a1711ca6a89fc8ad8148fe13212398fe569bc0`; FFTWpp `cb152c0e85f3822493c2d9e85a56307ac7b4f1c0`; GaussQuad `7d4786d192f68077cd99a34dcdf1379ed1eeac9a`; GSHTrans `8dd116df8df4222fe9b10a40c7213d34f2a274fb`; planetmodel `35be4ee54b3d84df1483e647878c5446a886c90b`.
+- Input and output: the fixture hash remains `72a30885258026dc1662f7713ac3674a37985bf045165965d41dd308c1f219a4`; the 91-row trace SHA-256 is `606e7c0eece9336b83e3247c97587d5e560c871fef84c90de9d43fe9dc4b5ece`. Runtime was 0.17 s with two OpenMP threads; peak resident memory was about 8.1 MiB.
+- Plot: generated from the saved trace with the command above using Matplotlib 3.6.3. SHA-256 remains `925f2609ad95bab8d498edcdca73a3ba1add470780bb8c267ff7f7e5878abe61`.
