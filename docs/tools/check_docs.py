@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check local HTML links, anchors, assets and authored code block wrappers."""
 import argparse
+import ast
 import hashlib
 import json
 import sys
@@ -43,6 +44,7 @@ def main():
     errors = []
     required_pages = {
         'index.html', 'installation.html', 'first-seismogram.html',
+        'python.html', 'plotting.html', 'kernels.html',
         'library-example.html', 'examples.html', 'input-files.html',
         'model-and-output-formats.html', 'methods-and-validation.html',
         'release-notes.html', 'maintainers.html',
@@ -70,6 +72,9 @@ def main():
         'api/Run_8hpp.html#a005fd5bf5085a7ce92b77071a426df19',
         'api/Synthetics_8hpp.html#a37f382b0fc276cb40ecc2f2a948e101c',
         'api/Kernels_8hpp.html#a87ca499eeb4cdae1c1060626cd687760',
+        'api/Input_8hpp.html#a9f0b0ad165807071cecf1808d796bca3',
+        'api/Run_8hpp.html#a94dff6e2a13c21656f02548b0db61ba2',
+        'api/Kernels_8hpp.html#a2700b3e83da66c395e2b58f31a290f40',
         'api/classYSpec_1_1Model.html#a11f4503d9302dc5a1f79020f2cc6b72b',
     }
     actual_api_fragments = {
@@ -125,9 +130,25 @@ def main():
         json.loads((site / 'examples/workflows.json').read_text())
     except (OSError, json.JSONDecodeError) as error:
         errors.append(f'workflow JSON fixture is invalid or missing: {error}')
+    for fixture in ('kernels-small.json', 'kernels-volume-small.json'):
+        try:
+            json.loads((site / 'examples' / fixture).read_text())
+        except (OSError, json.JSONDecodeError) as error:
+            errors.append(f'{fixture} is invalid or missing: {error}')
+    python_example = site / 'examples/python-small-calculation.py'
+    try:
+        ast.parse(python_example.read_text(), filename=str(python_example))
+    except (OSError, SyntaxError) as error:
+        errors.append(f'Python calculation example is invalid or missing: {error}')
     for required_asset in ('examples/prem.200', 'examples/station.pz',
                            'examples/workflows.json',
                            'examples/library-workflows.cpp',
+                           'examples/kernels-small.json',
+                           'examples/kernels-volume-small.json',
+                           'examples/python-small-calculation.py',
+                           'assets/traces-small.png',
+                           'assets/kernels-radial-small.png',
+                           'assets/kernels-section-small.png',
                            'assets/adjoint-kernels.pdf'):
         if not (site / required_asset).is_file():
             errors.append(f'required downloadable asset is missing: {required_asset}')
