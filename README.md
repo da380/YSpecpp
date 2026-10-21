@@ -445,7 +445,7 @@ afterwards, through the weights of the jumps and the angular functions.
   each is kept as it passes them, and each source then needs only its own
   determinant and the b-vectors carried out to the receivers, which change
   form with the minors at each boundary between solid and fluid, so that a
-  receiver may be in an ocean or the core. Integration starts where a WKB
+  receiver may be in an ocean or the core. Integration starts where a JWKB
   estimate says the solution has decayed by e^-11 below its turning point,
   beneath the deepest source, from starting values for a homogeneous sphere;
   below that start the response is negligible and is taken to be zero.
