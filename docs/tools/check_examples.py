@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the small downloadable manual fixtures and compile its library example."""
 import argparse
+import json
 import math
 import os
 import re
@@ -58,11 +59,169 @@ def numeric_rows(path, columns=None, tagged=False):
 
 def copy_kernel_fixture(directory, fixture):
     directory.mkdir()
-    shutil.copy2(ROOT / f'docs/site/examples/{fixture}', directory / 'input.json')
+    source_path = ROOT / f'docs/site/examples/{fixture}'
+    shutil.copy2(source_path, directory / 'input.json')
     shutil.copy2(ROOT / 'examples/prem.200', directory / 'prem.200')
+    source = json.loads(source_path.read_text())['sources'][0]
+    return float(source['latitude']), float(source['longitude'])
 
 
-def check_kernel_outputs(directory, prefix):
+def check_sampled_grid_contract(section_file, map_file, source_location,
+                                probe_truncation=False):
+    expected_sampled_parameters = ['vp', 'vs', 'qkappa', 'qmu']
+    section_lines = section_file.read_text().splitlines()
+    map_lines = map_file.read_text().splitlines()
+    expected_unit_line = '# per unit volume of ln X, in s m^-3'
+    if len(section_lines) < 3 or section_lines[1] != expected_unit_line:
+        raise RuntimeError(f'{section_file}: expected relative sampled-kernel units')
+    if len(map_lines) < 3 or map_lines[1] != expected_unit_line:
+        raise RuntimeError(f'{map_file}: expected relative sampled-kernel units')
+
+    section_header = next((line.split() for line in section_lines
+                           if line.startswith('# section layer depth_km')), None)
+    if not section_header:
+        raise RuntimeError(f'{section_file}: missing path/across column header')
+    sampled_parameters = len(section_header) - 8  # '# section' + six coordinates
+    if section_header[8:] != expected_sampled_parameters:
+        raise RuntimeError(f'{section_file}: expected sampled parameters '
+                           f'{expected_sampled_parameters}, got {section_header[8:]}')
+    sampled_parameters = len(expected_sampled_parameters)
+
+    def validate_sections(path):
+        lines = path.read_text().splitlines()
+        rows = numeric_rows(path, columns=6 + sampled_parameters, tagged=True)
+        tags = [line.split()[0] for line in lines
+                if line and not line.startswith('#')]
+        if len(rows) != 1260:
+            raise RuntimeError(f'{path}: expected 1260 sampled section rows, got {len(rows)}')
+        if len(tags) != 1260 or tags.count('path') != 1085 or tags.count('across') != 175:
+            raise RuntimeError(f'{path}: expected 1085 path and 175 across rows')
+        if not any(value != 0 for row in rows for value in row[6:]):
+            raise RuntimeError(f'{path}: expected nonzero sampled kernels')
+
+        def check_nodes(tag, coordinates, expected_node_count):
+            selected = [row for row, row_tag in zip(rows, tags) if row_tag == tag]
+            if len(selected) != len(coordinates) * expected_node_count:
+                raise RuntimeError(f'{path}: {tag} grid has an unexpected shape')
+            node_keys = []
+            for start in range(0, len(selected), len(coordinates)):
+                block = selected[start:start + len(coordinates)]
+                key = (block[0][0], block[0][1])  # layer, depth_km
+                if any((row[0], row[1]) != key for row in block):
+                    raise RuntimeError(f'{path}: {tag} rows are not grouped by radial node')
+                actual = [(row[2], row[3]) for row in block]
+                if any(not (math.isclose(a[0], e[0], abs_tol=1e-4) and
+                            math.isclose(a[1], e[1], abs_tol=1e-4))
+                       for a, e in zip(actual, coordinates)):
+                    raise RuntimeError(f'{path}: {tag} grid coordinates/order do not match fixture')
+                node_keys.append(key)
+            if len(set(node_keys)) != expected_node_count:
+                raise RuntimeError(f'{path}: {tag} radial node sequence is incomplete or duplicated')
+            for layer, depth in node_keys:
+                if not float(layer).is_integer() or not 0 <= layer <= 12:
+                    raise RuntimeError(f'{path}: {tag} contains an invalid model layer')
+                if not 0 <= depth <= 6371:
+                    raise RuntimeError(f'{path}: {tag} contains a depth outside PREM')
+            return selected
+
+        path_coordinates = [(float(along), 0.0) for along in range(0, 61, 2)]
+        across_coordinates = [(30.0, float(across)) for across in range(-4, 5, 2)]
+        path_rows = check_nodes('path', path_coordinates, 35)
+        across_rows = check_nodes('across', across_coordinates, 35)
+        source_lat, source_lon = source_location
+        for row in path_rows:
+            if row[2] == 0.0:
+                if not math.isclose(row[4], source_lat, rel_tol=0, abs_tol=5.1e-6):
+                    raise RuntimeError(f'{path}: path origin latitude differs from fixture source')
+                if not math.isclose(row[5], source_lon, rel_tol=0, abs_tol=5.1e-6):
+                    raise RuntimeError(f'{path}: path origin longitude differs from fixture source')
+        for row in rows:
+            if not -90 <= row[4] <= 90 or not 0 <= row[5] < 360:
+                raise RuntimeError(f'{path}: latitude/longitude outside physical ranges')
+        return path_rows, across_rows
+
+    def validate_maps(path):
+        header = next((line.split() for line in map_lines
+                       if line.startswith('# layer depth_km')), None)
+        if not header or header[7:] != expected_sampled_parameters:
+            raise RuntimeError(f'{path}: expected sampled parameters '
+                               f'{expected_sampled_parameters}')
+        rows = numeric_rows(path, columns=6 + sampled_parameters)
+        if len(rows) != 310:
+            raise RuntimeError(f'{path}: expected 310 sampled map rows, got {len(rows)}')
+        expected_coordinates = [(float(along), float(across))
+                               for along in range(0, 61, 2)
+                               for across in range(-4, 5, 2)]
+        for start, depth in ((0, 100.0), (155, 500.0)):
+            block = rows[start:start + 155]
+            if len(block) != 155 or any(row[1] != depth for row in block):
+                raise RuntimeError(f'{path}: expected 155 rows at map depth {depth:g} km')
+            if any(not float(row[0]).is_integer() or not 0 <= row[0] <= 12
+                   for row in block):
+                raise RuntimeError(f'{path}: map contains an invalid model layer')
+            actual = [(row[2], row[3]) for row in block]
+            if any(not (math.isclose(a[0], e[0], abs_tol=1e-4) and
+                        math.isclose(a[1], e[1], abs_tol=1e-4))
+                   for a, e in zip(actual, expected_coordinates)):
+                raise RuntimeError(f'{path}: map grid coordinates/order do not match fixture')
+        if not any(row[6] != 0 for row in rows):
+            raise RuntimeError(f'{path}: expected nonzero sampled kernels')
+        for row in rows:
+            if not 0 <= row[1] <= 6371 or not -90 <= row[4] <= 90 or not 0 <= row[5] < 360:
+                raise RuntimeError(f'{path}: invalid map depth or latitude/longitude')
+
+    validate_sections(section_file)
+    validate_maps(map_file)
+    if probe_truncation:
+        probe = section_file.with_name(section_file.name + '.contract-probe')
+
+        def expect_rejection(label, content, check, message):
+            probe.write_text(content)
+            try:
+                try:
+                    check(probe)
+                except RuntimeError as error:
+                    if message not in str(error):
+                        raise RuntimeError(f'{label} probe failed for an unexpected reason: {error}') from error
+                else:
+                    raise RuntimeError(f'{label} probe was not rejected')
+            finally:
+                probe.unlink(missing_ok=True)
+
+        expect_rejection(
+            'two-row truncation', '\n'.join(section_lines[:-2]) + '\n',
+            validate_sections, 'expected 1260 sampled section rows, got 1258')
+        bad_tag_lines = section_lines.copy()
+        for index in range(len(bad_tag_lines) - 1, -1, -1):
+            if bad_tag_lines[index] and not bad_tag_lines[index].startswith('#'):
+                fields = bad_tag_lines[index].split()
+                fields[0] = 'other'
+                bad_tag_lines[index] = ' '.join(fields)
+                break
+        expect_rejection(
+            'section-tag', '\n'.join(bad_tag_lines) + '\n',
+            lambda path: check_sampled_grid_contract(path, map_file, source_location),
+            'expected path/across section tag')
+        bad_unit_lines = section_lines.copy()
+        bad_unit_lines[1] = '# per unit volume of X, in s m^-3'
+        expect_rejection(
+            'sampled-units', '\n'.join(bad_unit_lines) + '\n',
+            lambda path: check_sampled_grid_contract(path, map_file, source_location),
+            'expected relative sampled-kernel units')
+        bad_coordinate_lines = section_lines.copy()
+        for index, line in enumerate(bad_coordinate_lines):
+            if line and not line.startswith('#'):
+                fields = line.split()
+                fields[3] = '1.0000'  # first path point's along coordinate
+                bad_coordinate_lines[index] = ' '.join(fields)
+                break
+        expect_rejection(
+            'sampled-coordinate', '\n'.join(bad_coordinate_lines) + '\n',
+            lambda path: check_sampled_grid_contract(path, map_file, source_location),
+            'grid coordinates/order do not match fixture')
+
+
+def check_kernel_outputs(directory, prefix, source_location, probe_truncation=False):
     measurement = directory / f'{prefix}.measurement'
     data = numeric_rows(measurement, 4)
     if len(data) != 61 or not any(row[1] != 0 for row in data):
@@ -80,6 +239,10 @@ def check_kernel_outputs(directory, prefix):
                     if line.startswith('# radius_km depth_km weight_m3')), None)
     if not columns or len(columns) < 4:
         raise RuntimeError(f'{radial}: missing radial kernel parameter columns')
+    expected_radial_parameters = ['rho', 'vp', 'vs', 'qkappa', 'qmu']
+    if columns[4:] != expected_radial_parameters:
+        raise RuntimeError(f'{radial}: expected radial parameters '
+                           f'{expected_radial_parameters}, got {columns[4:]}')
     parameter_count = len(columns) - 4
     try:
         point_terms = [float(value) for value in at_source[2:]]
@@ -92,30 +255,9 @@ def check_kernel_outputs(directory, prefix):
         raise RuntimeError(f'{radial}: expected nonzero radial kernel values')
 
     section_file = directory / f'{prefix}.sections'
-    section_lines = section_file.read_text().splitlines()
-    section_header = next((line.split() for line in section_lines
-                           if line.startswith('# section layer depth_km')), None)
-    if not section_header:
-        raise RuntimeError(f'{section_file}: missing path/across column header')
-    sampled_parameters = len(section_header) - 8  # '# section' + six coordinates
-    if sampled_parameters < 1:
-        raise RuntimeError(f'{section_file}: missing sampled-kernel columns')
-    sections = numeric_rows(section_file, columns=6 + sampled_parameters,
-                            tagged=True)
-    section_tags = {line.split()[0] for line in section_lines
-                    if line and not line.startswith('#')}
-    if section_tags != {'path', 'across'}:
-        raise RuntimeError(f'{prefix}.sections: expected both path and across grids')
-    if not any(value != 0 for row in sections for value in row[6:]):
-        raise RuntimeError(f'{prefix}.sections: expected nonzero sampled kernels')
     map_file = directory / f'{prefix}.maps'
-    map_header = next((line.split() for line in map_file.read_text().splitlines()
-                       if line.startswith('# layer depth_km')), None)
-    if not map_header or len(map_header) - 7 != sampled_parameters:
-        raise RuntimeError(f'{map_file}: sampled columns differ from sections')
-    maps = numeric_rows(map_file, columns=6 + sampled_parameters)
-    if not any(row[6] != 0 for row in maps):
-        raise RuntimeError(f'{prefix}.maps: expected nonzero sampled kernels')
+    check_sampled_grid_contract(section_file, map_file, source_location,
+                                probe_truncation=probe_truncation)
 
 
 def check_png(path):
@@ -217,14 +359,15 @@ def main():
             raise RuntimeError('Python snapshot wrapper did not produce the four-row fixture')
 
         cpp_kernels = work / 'cpp-kernels'
-        copy_kernel_fixture(cpp_kernels, 'kernels-small.json')
+        cpp_source = copy_kernel_fixture(cpp_kernels, 'kernels-small.json')
         run([build / 'bin/yspec-kernels', cpp_kernels / 'input.json'], env)
-        check_kernel_outputs(cpp_kernels, 'kernel-small')
+        check_kernel_outputs(cpp_kernels, 'kernel-small', cpp_source,
+                             probe_truncation=True)
 
         python_kernels = work / 'python-kernels'
-        copy_kernel_fixture(python_kernels, 'kernels-small.json')
+        python_source = copy_kernel_fixture(python_kernels, 'kernels-small.json')
         run([python.parent / 'yspec-kernels', python_kernels / 'input.json'], python_env)
-        check_kernel_outputs(python_kernels, 'kernel-small')
+        check_kernel_outputs(python_kernels, 'kernel-small', python_source)
 
         plotter = python.parent / 'yspec-plot'
         run([plotter, 'traces', python_seismo / 'input.json', '--receivers', '1',
