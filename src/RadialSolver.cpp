@@ -331,7 +331,7 @@ class RadialSolver::Impl {
         const auto qUpper = slowness2(layer, upper);
         const auto qLower = slowness2(layer, lower);
         if (qUpper < 0 && qLower < 0) {
-          // The trapezium rule for the WKB decay, omega times the
+          // The trapezium rule for the JWKB decay, omega times the
           // evanescent slowness, over the segment.
           const auto rateUpper =
               std::isinf(qUpper) ? std::sqrt(-qLower) : std::sqrt(-qUpper);

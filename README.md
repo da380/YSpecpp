@@ -1,5 +1,7 @@
 # YSpec
 
+[![PyPI](https://img.shields.io/pypi/v/yspec-seismo)](https://pypi.org/project/yspec-seismo/)
+
 YSpec computes synthetic seismograms for a spherically symmetric earth model
 by direct radial integration of the equations of motion in the frequency
 domain (Friederich & Dalkolmo 1995), including self-gravitation (Al-Attar &
