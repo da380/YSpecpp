@@ -66,9 +66,19 @@ def main():
         first_run = work / 'first-seismogram'
         run([build / 'bin/yspec', first_run / 'input.json'], env)
         first_trace = first_run / 'first-seismogram.out.1'
-        trace_files = sorted(first_run.glob('first-seismogram.out.*'))
+        # The traces are the files with a numbered suffix; beside them yspec
+        # writes first-seismogram.out.receivers, a table of each trace's
+        # receiver, checked below.
+        trace_files = sorted(path for path in first_run.glob('first-seismogram.out.*')
+                             if path.suffix[1:].isdigit())
         if trace_files != [first_trace] or not first_trace.is_file():
             raise RuntimeError('first-seismogram run did not create exactly first-seismogram.out.1')
+        receivers = first_run / 'first-seismogram.out.receivers'
+        if not receivers.is_file():
+            raise RuntimeError(f'{receivers}: not written')
+        rows = receivers.read_text().splitlines()
+        if len(rows) != 2 or not rows[0].startswith('#') or rows[1].split()[0] != first_trace.name:
+            raise RuntimeError(f'{receivers}: expected a header and one row naming {first_trace.name}')
         rows = finite_rows(first_trace, 4)
         if len(rows) != 91:
             raise RuntimeError(f'{first_trace}: expected 91 time samples, got {len(rows)}')
