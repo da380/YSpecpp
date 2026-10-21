@@ -1,5 +1,4 @@
 #include <YSpec/YSpec.hpp>
-
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -14,16 +13,17 @@ int main(int argc, char** argv) {
 
   const auto sources = std::vector<YSpec::Source>{
       {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e17}}};
-  const auto receivers = std::vector<YSpec::Receiver>{
-      {.location = {0, 30}, .depth = 3e3}};
-  const auto strains = YSpec::ComputeStrains(model, calculation, sources,
-                                               receivers);
+  const auto receivers =
+      std::vector<YSpec::Receiver>{{.location = {0, 30}, .depth = 3e3}};
+  const auto strains =
+      YSpec::ComputeStrains(model, calculation, sources, receivers);
   const auto radial_strain = strains.Trace(0, 0, YSpec::StrainComponent::rr);
   if (radial_strain.empty() || !std::isfinite(radial_strain[0])) return 1;
 
-  const auto measurement = YSpec::Traveltime(
-      model, calculation, sources[0], receivers[0], YSpec::Vertical,
-      YSpec::Window{.start = 200, .end = 800, .taper = 30});
+  const auto measurement =
+      YSpec::Traveltime(model, calculation, sources[0], receivers[0],
+                        YSpec::Along(YSpec::Vertical),
+                        YSpec::Window{.start = 200, .end = 800, .taper = 30});
   const auto mesh = YSpec::RadialMesh{.order = 3, .maxElement = 100e3};
   const auto kernels = YSpec::ComputeRadialKernels(
       model, calculation, sources[0], measurement, mesh);

@@ -75,6 +75,11 @@ Shared ReadShared(const Json& json, const std::filesystem::path& directory);
 // The optional "quantity" of an output section.
 Quantity ReadQuantity(const Json& output, Quantity fallback);
 
+// A receiver of its own: a depth, a "location" or a "distance_deg" and
+// "azimuth_deg" from a point, and an optional "instrument".
+Receiver ReadReceiver(const Json& json, const Location& from,
+                      const std::filesystem::path& directory);
+
 // A "receivers" section.
 std::vector<Receiver> ReadReceivers(const Json& json,
                                     const std::filesystem::path& directory);

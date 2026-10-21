@@ -132,7 +132,9 @@ TEST(Synthetics, ServeReceiversAtSeveralDepthsTogether) {
   }
   const auto together =
       ComputeSeismograms(model, calculation, sources, receivers);
-  for (auto k = std::size_t{0}; k < receivers.size(); ++k) {
+  // One place per depth suffices for the comparison: the places share the
+  // depth's integration, so the second adds nothing but a full solve.
+  for (auto k = std::size_t{0}; k < receivers.size(); k += 2) {
     const auto alone = ComputeSeismograms(model, calculation, sources,
                                           std::span{&receivers[k], 1});
     for (auto c : {Vertical, North, East}) {

@@ -8,3 +8,9 @@
 
 # Papers kept for reference while working; not ours to redistribute.
 docs/papers/
+
+# Python
+**/__pycache__
+**/.venv
+**/.pytest_cache
+/dist

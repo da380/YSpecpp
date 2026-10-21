@@ -12,6 +12,7 @@
 #include "AngularFunctions.hpp"
 #include "Coefficients.hpp"
 #include "OrderArray.hpp"
+#include "Report.hpp"
 
 namespace YSpec {
 
@@ -114,6 +115,9 @@ Snapshots ComputeSnapshots(const Model& model, const Calculation& calculation,
   auto sums = Table(sourceCount, depthCount, distanceCount, timeCount);
   auto done = std::atomic<std::size_t>{0};
   auto error = std::exception_ptr{};
+  // Once a frequency fails the rest are skipped, and the error is thrown
+  // when the loop ends.
+  auto failed = std::atomic<bool>{false};
 
   // The coefficients at one frequency, for each pair of a source and a depth,
   // each degree and each order: u, v and w.
@@ -132,6 +136,7 @@ Snapshots ComputeSnapshots(const Model& model, const Calculation& calculation,
     auto byDegree = std::vector<Complex>(pairCount * degreeCount * 15);
 #pragma omp for schedule(dynamic)
     for (long index = 0; index < static_cast<long>(frequencyCount); ++index) {
+      if (failed) continue;
       try {
         const auto frequency = static_cast<std::size_t>(index);
         const auto omega = frequencies.Omega(frequency);
@@ -199,11 +204,9 @@ Snapshots ComputeSnapshots(const Model& model, const Calculation& calculation,
           }
         }
         const auto finished = ++done;
-        if (progress) {
-#pragma omp critical(YSpecProgress)
-          progress(finished, frequencyCount);
-        }
+        Report(progress, finished, frequencyCount);
       } catch (...) {
+        failed = true;
 #pragma omp critical(YSpecError)
         if (!error) error = std::current_exception();
       }

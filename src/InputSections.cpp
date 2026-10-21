@@ -276,6 +276,19 @@ std::vector<Location> ReadProfile(const Json& profile) {
        "should have either \"to\", or \"azimuth_deg\" and \"distances_deg\"");
 }
 
+std::optional<Instrument> ReadInstrument(
+    const Json& group, const std::filesystem::path& directory) {
+  const auto* file = group.Find("instrument");
+  if (!file) return std::nullopt;
+  try {
+    return ReadSacPoleZero(directory / file->AsString());
+  } catch (const planetmodel::Error&) {
+    throw;
+  } catch (const std::runtime_error& error) {
+    Fail(*file, error.what());
+  }
+}
+
 std::vector<Receiver> ReadReceiverGroup(
     const Json& group, const std::filesystem::path& directory) {
   Allow(group, {"depth_km", "locations", "profile", "instrument"});
@@ -294,16 +307,7 @@ std::vector<Receiver> ReadReceiverGroup(
   } else {
     locations = ReadProfile(*profile);
   }
-  auto instrument = std::optional<Instrument>{};
-  if (const auto* file = group.Find("instrument")) {
-    try {
-      instrument = ReadSacPoleZero(directory / file->AsString());
-    } catch (const planetmodel::Error&) {
-      throw;
-    } catch (const std::runtime_error& error) {
-      Fail(*file, error.what());
-    }
-  }
+  const auto instrument = ReadInstrument(group, directory);
   auto receivers = std::vector<Receiver>{};
   for (auto depth : depths) {
     for (const auto& location : locations) {
@@ -315,6 +319,30 @@ std::vector<Receiver> ReadReceiverGroup(
 }
 
 }  // namespace
+
+Receiver ReadReceiver(const Json& json, const Location& from,
+                      const std::filesystem::path& directory) {
+  Allow(json,
+        {"depth_km", "location", "distance_deg", "azimuth_deg", "instrument"});
+  auto receiver = Receiver{.location = {},
+                           .depth = Depth(json.At("depth_km")),
+                           .instrument = ReadInstrument(json, directory)};
+  const auto* location = json.Find("location");
+  const auto* distance = json.Find("distance_deg");
+  const auto* azimuth = json.Find("azimuth_deg");
+  if (location && !distance && !azimuth) {
+    receiver.location = ReadLocation(*location);
+  } else if (!location && distance && azimuth) {
+    const auto d = distance->AsNumber();
+    if (!(d >= 0 && d <= 180)) Fail(*distance, "should lie between 0 and 180");
+    receiver.location = GreatCircle(from, azimuth->AsNumber(), d, d, 1).front();
+  } else {
+    Fail(json,
+         "should have either \"location\", or \"distance_deg\" and "
+         "\"azimuth_deg\"");
+  }
+  return receiver;
+}
 
 std::vector<Receiver> ReadReceivers(const Json& json,
                                     const std::filesystem::path& directory) {

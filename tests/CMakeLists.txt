@@ -24,6 +24,18 @@ function(yspec_add_test name)
   gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
 endfunction()
 
+# Tests of a full workflow, labelled slow: everyday runs can leave them out
+# with ctest -LE slow, as the Debug builds of CI do. Each has a quick
+# counterpart that tests the pieces.
+function(yspec_add_slow_test name)
+  add_executable(${name} ${name}.cpp)
+  target_link_libraries(${name} PRIVATE YSpec::YSpec YSpecInternal
+                                        GTest::gtest_main)
+  target_compile_definitions(${name} PRIVATE ${YSPEC_TEST_DEFINITIONS})
+  target_compile_options(${name} PRIVATE ${YSPEC_WARNINGS})
+  gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST PROPERTIES LABELS slow)
+endfunction()
+
 yspec_add_test(TestModel)
 yspec_add_test(TestNumerics)
 yspec_add_test(TestSolver)
@@ -36,8 +48,12 @@ yspec_add_test(TestHomogeneousSphere)
 yspec_add_test(TestSynthetics)
 yspec_add_test(TestStrain)
 yspec_add_test(TestKernels)
+yspec_add_test(TestKernelParts)
+yspec_add_test(TestVolumeKernels)
 yspec_add_test(TestSnapshots)
 yspec_add_test(TestRun)
+yspec_add_slow_test(TestKernelsWorkflow)
+yspec_add_slow_test(TestStrainWorkflow)
 
 # End-to-end cases, compared with seismograms from the Fortran YSpec (made by
 # tests/fortran/make_regression_reference.sh). Differences are relative to the

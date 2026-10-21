@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfftw3-dev ninja-build \
+          sudo apt-get install -y libfftw3-dev libnetcdf-dev ninja-build \
             ${{ matrix.compiler.packages }}
       - name: Configure
         run: |
@@ -39,8 +39,13 @@ jobs:
             -DYSPEC_WARNINGS_AS_ERRORS=ON
       - name: Build
         run: cmake --build build --parallel
+      # Debug leaves out the slow full-workflow tests (label slow): without
+      # optimisation they take tens of minutes, and their quick counterparts
+      # cover the same code.
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: >
+          ctest --test-dir build --output-on-failure
+          ${{ matrix.build_type == 'Debug' && '-LE slow' || '' }}
 
   # The serial build, which must give the same answers.
   serial:
@@ -50,13 +55,42 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfftw3-dev ninja-build
+          sudo apt-get install -y libfftw3-dev libnetcdf-dev ninja-build
       - name: Configure
         run: cmake --preset serial -G Ninja
       - name: Build
         run: cmake --build --preset serial --parallel
       - name: Test
         run: ctest --preset serial
+
+  # The build the Python wheels make: pocketfft in place of FFTW.
+  pocketfft:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnetcdf-dev ninja-build
+      - name: Configure
+        run: cmake --preset pocketfft -G Ninja -DYSPEC_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build --preset pocketfft --parallel
+      - name: Test
+        run: ctest --preset pocketfft
+
+  # The Python package, built from the sources as pip builds it.
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install ".[test]"
+      - name: Test
+        run: pytest
 
   format:
     runs-on: ubuntu-24.04
@@ -66,4 +100,4 @@ jobs:
         run: |
           clang-format-18 --dry-run --Werror \
             YSpec/*.hpp src/*.hpp src/*.cpp app/*.hpp app/*.cpp tests/*.cpp \
-            tests/regression/*.cpp examples/*.cpp
+            tests/regression/*.cpp examples/*.cpp python/src/*.cpp

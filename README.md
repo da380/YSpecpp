@@ -16,11 +16,16 @@ implemented exactly at complex frequency rather than to first order in 1/Q.
 Gravity can be left out, included in the Cowling approximation, or included
 in full.
 
+It is a C++ library with three programs, and a Python package,
+`yspec-seismo` (see the Python section below).
+
 ## Building
 
 YSpec needs a C++23 compiler (GCC 13 or Clang 18 and later), CMake 3.24 or
-later, FFTW3 (in double, single and long double precision, as FFTWpp requires),
-and optionally OpenMP. Everything else is fetched by CMake:
+later, FFTW3 (in double, single and long double precision, as FFTWpp
+requires; or none, with pocketfft, below), netCDF-C for writing
+three-dimensional kernels (`-DYSPEC_WITH_NETCDF=OFF` builds without it), and
+optionally OpenMP. Everything else is fetched by CMake:
 [NumericConcepts](https://github.com/da380/NumericConcepts),
 [Interpolation](https://github.com/da380/Interpolation),
 [FFTWpp](https://github.com/da380/FFTWpp),
@@ -38,18 +43,24 @@ ctest --test-dir build
 To build against local checkouts of the dependencies instead of fetching
 them, pass `-DFETCHCONTENT_SOURCE_DIR_<NAME>=/path/to/checkout` for each
 (`GSHTRANS`, `INTERPOLATION`, ...). `-DYSPEC_WITH_OPENMP=OFF` builds a serial
-version, which gives the same results.
+version, which gives the same results. `-DYSPEC_FFT=pocketfft` (the preset
+`pocketfft`) makes YSpec's one Fourier transform, of each spectrum to its
+time series, with [pocketfft](https://github.com/mreineck/pocketfft) instead
+of FFTW, and needs no FFTW at all; the results agree to rounding. The Python
+wheels are built so: FFTW is GPL, and a wheel carries the libraries it uses.
 
 ## Running
 
 There is a program for each kind of output: `yspec` computes seismograms at
-receivers, and `yspec-snapshot` the wavefield at chosen times on a grid
-around each source. They read JSON files that share most of their members.
+receivers, `yspec-snapshot` the wavefield at chosen times on a grid around
+each source, and `yspec-kernels` the sensitivity of traveltimes to the
+model. They read JSON files that share most of their members.
 
 ```sh
 cd build
 bin/yspec examples/input.json
 bin/yspec-snapshot examples/snapshot.json
+bin/yspec-kernels examples/kernels/traveltimes.json
 ```
 
 The build copies the example inputs and models into `build/examples`, so the
@@ -60,7 +71,69 @@ written per receiver, `<prefix>.1`, `<prefix>.2`, ..., in the order the
 receivers are listed; with several sources, one per source and receiver,
 `<prefix>.<source>.1`, .... Each line holds the time after the origin time (s)
 and the vertical (up), north and east components, in SI units of the quantity
-asked for, or in the units of the instrument's output where there is one.
+asked for, or in the units of the instrument's output where there is one. A
+table `<prefix>.receivers` lists the files, one line for each source and
+receiver: the receiver's latitude, longitude and depth (km), and its distance,
+its azimuth at the source and the source's azimuth at it (degrees).
+
+### Examples and plotting
+
+Each directory of `examples/` holds an example, with its input and a script
+that runs it and plots the result:
+
+| example | program | what it shows |
+|---------|---------|---------------|
+| `record-section` | `yspec` | velocity every 5 degrees along a great circle, vertical and transverse |
+| `instrument` | `yspec` | one place recorded twice: the ground displacement, and a seismometer's output in counts |
+| `depths` | `yspec` | one place at depths from the sea floor to the inner core |
+| `gravity` | `yspec` | a long-period seismogram without gravity, in the Cowling approximation and in full |
+| `force` | `yspec` | the waves from a point force, of the kind a landslide exerts |
+| `cross-section` | `yspec-snapshot` | the wavefield on a great circle through the whole earth at six times |
+| `map` | `yspec-snapshot` | the wavefield at the sea floor around the source, over the whole globe |
+| `kernels` | `yspec-kernels` | the radial kernels of an S-wave and a Rayleigh-wave traveltime |
+| `kernels-3d` | `yspec-kernels` | the three-dimensional kernel of an S-wave traveltime: its banana and Fresnel zones |
+| `kernels-gallery` | `yspec-kernels` | the three-dimensional kernels of P, PP, S, ScS and SS at 60 degrees and of Pdiff and Sdiff at 110, on sections along and across the path |
+
+```sh
+cd build
+examples/record-section/run.sh     # or examples/run-all.sh for all of them
+```
+
+Each takes seconds to a minute on four threads (the scripts use four unless
+`OMP_NUM_THREADS` says otherwise), the gallery of kernels about three
+minutes, and writes its output and figures in its own directory. The
+programs are found in the build, on the `PATH`, or in
+`YSPEC_BIN`.
+
+The figures are drawn by `yspec-plot`, which the Python package installs
+with its `plot` extra (see the Python section below), built on
+[planetmodel](https://github.com/da380/planetmodel), whose sections and
+colour scales it shares, with maps through cartopy. The scripts find it on
+the `PATH`:
+
+```sh
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[plot]"
+yspec-plot section build/examples/record-section/input.json
+```
+
+The package installs the programs too, so the examples also run with it
+alone, without the C++ build.
+
+`yspec-plot` takes the input file of a run and finds the output from it:
+`section` draws a record section, `traces` the components at a few receivers,
+`compare` one receiver in several runs, `snapshot` a section through the
+earth or a map around the source, `kernels` the kernels of a measurement
+against radius, below its seismogram and window, `volume` its
+three-dimensional kernels, from the model file, on a section along the great
+circle through the source and the receiver and on maps at some depths,
+`banana` its kernel on the sections along the path and across it, below its
+seismogram and window, and `gallery` those of every measurement of a run, a
+row for each. With several measurements, `--measurement` chooses one by
+name. The colours of kernels saturate near the source and the receiver,
+where the kernels are far larger than elsewhere. The components of
+seismograms are Z, N and E, or R and T, radial and transverse to the source.
+Without `-o` the figure is shown.
 
 ### Input
 
@@ -100,12 +173,41 @@ The calculation is read from a JSON file:
   acceleration: it adds the change in gravity seen by an instrument that moves
   with the ground, and the tilt of its axis (default `false`).
 - `degrees`: the spherical harmonic degrees summed (`min` defaults to 0).
+  What the last degree cuts off is cut off sharply, and the tail of the cut
+  runs through the whole record, so enough are needed for two things, the
+  larger setting `max`:
+  - the fundamental surface waves at the highest frequency, l ≈ 2πfa/c,
+    about 10 for each mHz, even where only body waves are wanted;
+  - the near field of a shallow source, whose terms fall off as
+    e^(−l Δd/a), Δd the difference in depth between the source and the
+    receiver: n a/Δd, with n about 6 in bands that reach down to 1 mHz, 8
+    at the longest periods, and 2 at higher frequencies if the first few
+    minutes do not matter (a/Δd ≈ 240 for the examples' source, 29.5 km
+    deep, and receivers at the sea floor). What is cut off of it is a pulse
+    at the origin time, at any distance, which a narrow low ramp of the
+    filter spreads through the record. Doubling `max` and seeing whether the
+    start of the record moves is the check.
+
+  Receivers belong at the sea floor or below. In the water, with gravity,
+  the ocean's surface-gravity waves (tsunamis), about 250 degrees for each
+  mHz and far more above 5 mHz, would be needed as well; cut off, they swamp
+  the horizontal motion there.
 - `frequencies_mHz`: the band computed; `time_series` the length of the
   seismograms and their sampling. The Nyquist frequency must lie above the
   highest frequency; without `time_step_s` the step is a quarter of the
-  shortest period.
+  shortest period. The damping ε is 5 e-folds over the length, and the
+  frequencies are spaced so that the transform's period, a power of two of
+  samples, is at least 2π/ε: what arrives after the period wraps round,
+  damped by e^(−εT). The time step sets where in that range the period falls,
+  and with it the number of frequencies: a longer one can hold late surface
+  waves that would otherwise wrap round onto an early phase.
 - `filter_mHz`: an optional raised-cosine taper, rising from zero to one
-  between its first two corners and falling back between its last two.
+  between its first two corners and falling back between its last two. The
+  taper has zero phase, so its response begins before the origin time, by
+  about the inverse of the width of its lowest ramp; with the damping, that
+  part wraps round and reappears, amplified, at the end of the time series.
+  A low ramp of 1 mHz or more, or a longer time series, keeps it out of the
+  record.
 - `sources`: one or more, each with its hypocentre (geographic latitude) and
   its moment tensor `moment_tensor_Nm`, a point force `force_N` (members
   `r`, `t`, `p`, each defaulting to zero), or both, in spherical coordinates
@@ -188,10 +290,118 @@ points to rounding error. The example above, at degrees to 300 and up to 15
 mHz, takes about 3 s on 4 threads, and the same section through the whole
 earth, from the sea surface to near the centre, about 4 s.
 
-With gravity, the free surface of an ocean carries surface-gravity waves
-(tsunamis), which are slow and outlast most time series: on and near the sea
-surface they can wrap around in time, and appear early. A longer time series,
-or points below the sea surface, avoid that.
+With gravity, points in an ocean need far more degrees than points in the
+solid, for the ocean's surface-gravity waves: see `degrees` above.
+
+### Kernels
+
+`yspec-kernels` reads the same members as `yspec`, with one source, except
+that its `output` has only `prefix` and `quantity`, and that `receiver`,
+`measurements` and `kernels` replace `receivers`:
+
+```json
+"receiver": { "depth_km": 3, "distance_deg": 60, "azimuth_deg": 30 },
+"measurements": [
+  { "name": "S", "component": "T",
+    "traveltime": { "window_s": [1000, 1200], "taper_s": 40 } },
+  { "name": "Rayleigh", "component": "Z",
+    "traveltime": { "window_s": [1550, 2050], "taper_s": 100 } }
+],
+"kernels": {
+  "parameters": "velocities",
+  "scaling": "relative",
+  "mesh": { "order": 5, "max_element_km": 50 },
+  "volume": { "degree": 48, "max_element_km": 100 },
+  "sections": { "margin_deg": 15, "half_width_deg": 15, "spacing_deg": 0.25,
+                "radial_spacing_km": 30 },
+  "maps": { "depths_km": [200, 600, 1500, 2700], "margin_deg": 10,
+            "half_width_deg": 15, "spacing_deg": 0.5 }
+}
+```
+
+The receiver is at a `location`, or at a distance and azimuth from the
+source, and may have an `instrument`, as in `yspec`. Each measurement is the
+traveltime of the seismogram of its `component` (`Z`, `N`, `E`, or `R` and
+`T`, radial and transverse to the source), measured by cross-correlation with
+the synthetic itself in its window, with cosine tapers of the given length
+inside it; a window of a period or two about one phase keeps its kernel
+simple. Each has its own kernels. They are named by `name`, or numbered, and
+share the receiver, so that they share the forward field, and the adjoint
+fields of at most three directions, of which each measurement's is a
+combination. Their sensitivity to spherically symmetric perturbations of the
+model is computed by the adjoint method (see
+`docs/theory/adjoint-kernels.tex`): the adjoint field is the response, at the
+same complex frequencies, to a force at the receiver, so the cost is about
+that of the seismograms of a source at a receiver at every node of the mesh
+for the forward field and for each direction.
+
+`parameters` chooses the kernels: `love` (density, A, C, F, L, N and their
+inverse quality factors, the model's own), `moduli` (density, the bulk and
+shear moduli, and their inverse quality factors), `velocities` (the default:
+density at fixed velocities, the isotropic speeds and the inverse quality
+factors) or `anisotropic` (density at fixed velocities, the five speeds and
+eta of transverse isotropy, and the inverse quality factors). `scaling` is
+`absolute` (the default), for perturbations of the parameters, or `relative`,
+for perturbations of their logarithms. The mesh has Gauss-Legendre nodes in
+elements between the discontinuities of the model, the source and the
+receiver, no larger than asked.
+
+For each measurement, files `<prefix>.<name>.*` are written, or
+`<prefix>.*` if there is only one, as they are called below.
+`<prefix>.kernels` has a header that describes the
+measurement and the units and gives the kernels' point parts at the source
+(on the line beginning `# at_source`), and a line for each node: its radius
+and depth (km), its weight in the integral over radius (m^3), and each
+kernel, so that the change in the traveltime is the sum over the nodes of
+weight times kernel times perturbation, plus the point parts times the
+perturbations at the source. The point parts come from the jump in the
+displacement across the radius of a moment tensor, which makes the kernels
+of the moduli that set it concentrated there. `<prefix>.measurement` has a
+line for each sample: the time, the seismogram measured, the window and the
+adjoint source. Both kernels and point parts predict finite differences of
+the measurement to about 1e-6, in every treatment of gravity; the tests
+check them. The example of an S wave and a Rayleigh wave, to 15 mHz and
+degree 300 at 680 nodes, takes about 13 s on four threads.
+
+With `volume`, the three-dimensional kernels are computed as well, for the
+same parameters at fixed density: laterally varying perturbations of density
+would take the model out of hydrostatic equilibrium, and are left out (see
+the derivation). They are written as a model file of
+[planetmodel](https://github.com/da380/planetmodel), `<prefix>.nc`, on the
+skeleton of the model's discontinuities, with nodes in each layer no further
+apart than `max_element_km`, both sides of each discontinuity included, and at
+each on a Gauss-Legendre grid resolving degree `degree` and at the poles; a
+field `K_vs`, say, for each parameter, read linearly between the nodes.
+planetmodel draws sections and maps of them, and writes them for ParaView.
+Each field is evaluated in its own frame, the forward field with the source at
+the pole and the adjoint field with the receiver there, where they need only
+the few orders a point source excites, and the two strains are turned into one
+frame at each point; the integral of each kernel over every sphere is the
+radial kernel, and the kernels at single points agree with those computed in
+the source's frame alone, with the adjoint field's every order, which the
+tests check. The cost is about that of the seismograms of a source at each
+point of the grid at each node, for the forward field and for each
+direction, so modest grids are wise: the example, to 10 mHz and degree 200 on
+a grid of degree 48, takes about 45 s on four threads. Writing model files
+needs netCDF-C (`libnetcdf-dev`); YSpec builds without it, with
+`-DYSPEC_WITH_NETCDF=OFF`, and does everything else.
+
+With `sections`, with or without `volume`, the three-dimensional kernels are
+computed on two sections: along the great circle through the source and the
+receiver, from `margin_deg` before the source to as far beyond the receiver,
+and across it at its middle, `half_width_deg` to each side, at points
+`spacing_deg` apart, at nodes in each layer no further apart than
+`radial_spacing_km`, both sides of each discontinuity included. They are
+written to `<prefix>.sections`, a line for each point: the section (`path`
+or `across`), the layer, the depth (km), the distances along the path and
+across it (degrees), the latitude and longitude, and each kernel. With
+`maps`, they are computed on maps at the depths given, over the same stretch
+of the path and `half_width_deg` to each side of it, and written to
+`<prefix>.maps` in the same way, without the section; a map at a
+discontinuity is on its upper side. Sections and maps need no netCDF. The
+gallery's run at 60 degrees, five measurements on two components to 40 mHz
+and degree 450 on its two sections, takes about two minutes on four
+threads.
 
 ## Accuracy and speed
 
@@ -308,18 +518,79 @@ seismogram to spherically symmetric perturbations of the model, by the adjoint
 method: of the density (with the gravity that follows from it), of the five
 Love moduli and of their quality factors. A measurement is given by its
 adjoint source, and `YSpec::Traveltime` forms that of a cross-correlation
-traveltime in a window. The adjoint field is the forward response, at the same
-complex frequencies, to a force at the receiver, so the kernels cost about
-what two sets of seismograms at every node of a radial mesh would; they
-predict finite differences of the measurement to about 1e-6, which the tests
-check. The derivation is in `docs/theory/adjoint-kernels.tex`.
+traveltime in a window, on the seismogram along any direction
+(`YSpec::Along` a component, `YSpec::RadialDirection`,
+`YSpec::TransverseDirection`), and `YSpec::Traveltimes` those of several from
+one synthetic; given several measurements at one receiver,
+`YSpec::ComputeRadialKernels` gives the kernels of each, sharing the fields.
+`YSpec::Reparameterise` gives the kernels in other parameters, absolute or
+relative. The adjoint field is the forward response, at the same complex
+frequencies, to a force at the receiver, so the kernels cost about what two
+sets of seismograms at every node of a radial mesh would; they predict
+finite differences of the measurement to about 1e-6, which the tests check.
+The derivation is in `docs/theory/adjoint-kernels.tex`.
+
+`YSpec::ComputeSampledKernels` gives the three-dimensional kernels of
+measurements at one receiver, at fixed density, on samplings of the model: a
+`YSpec::VolumeSampling`, nodes in radius on a Gauss-Legendre grid of each
+sphere, `YSpec::PathSection` and `YSpec::CrossSection`, sections along the
+path and across it, and `YSpec::PathMaps`, maps about the path at chosen
+depths.
 
 `YSpec::ComputeSnapshots` gives the wavefield on a `YSpec::SnapshotGrid` at
-chosen times. `YSpec::RunSeismograms("input.json")` and
-`YSpec::RunSnapshots("snapshot.json")` do what the programs do: read an input
-file, compute what it describes and write it. `YSpec::RadialSolver` gives the
+chosen times. `YSpec::RunSeismograms("input.json")`,
+`YSpec::RunSnapshots("snapshot.json")` and `YSpec::RunKernels("s-wave.json")`
+do what the programs do: read an input file, compute what it describes and
+write it. `YSpec::RadialSolver` gives the
 responses to unit jumps at a set of source radii, at a set of receiver radii,
 for one degree and frequency.
+
+## Python
+
+The Python package, `yspec-seismo`, is imported as `yspec`. It gives the
+library from Python, with numpy arrays for its results, and installs the
+programs, the PREM decks of the examples and, with the `plot` extra,
+`yspec-plot`:
+
+```python
+import numpy as np
+import yspec
+
+model = yspec.Model.prem()
+source = yspec.Source(latitude=36.87, longitude=35.58, depth_km=29.5,
+                      moment_tensor=dict(rr=4.22e17, rt=3.08e17, rp=6.99e17,
+                                         tt=-2.976e18, tp=6.54e17, pp=2.55e18))
+receivers = yspec.great_circle(source, azimuth_deg=60,
+                               distances_deg=np.arange(5, 180, 5))
+calculation = yspec.Calculation(degrees=300, frequencies_mhz=(0.2, 15),
+                                length_min=60, filter_mhz=(1, 2, 12, 15),
+                                quantity="velocity")
+seismograms = yspec.seismograms(model, calculation, source, receivers,
+                                progress=True)
+seismograms.data   # [source, receiver, component, sample]: Z, N and E
+```
+
+It has seismograms and strains, snapshots, traveltimes and their radial and
+three-dimensional kernels, in the units of the input files (km, degrees,
+mHz, s); `python/README.md` is its page on PyPI. It is built by
+[nanobind](https://github.com/wjakob/nanobind) and
+[scikit-build-core](https://github.com/scikit-build/scikit-build-core) from
+`pyproject.toml`, with the module in `python/src/bindings.cpp`, the Python
+around it in `python/yspec` and its tests in `python/tests`:
+
+```sh
+pip install -e ".[plot,obspy,test]"   # from the sources, rebuilt on reinstall
+pytest
+```
+
+The calculations release Python's lock and run on the library's threads;
+Ctrl-C, or an exception from a progress callback, stops one at the next
+frequency to finish. The wheels, for Linux (x86_64 and aarch64) and macOS
+(arm64, on one thread, as Apple's compiler has no OpenMP), are built by
+`.github/workflows/wheels.yml` with cibuildwheel and published to PyPI when
+a tag `v*` is pushed, as `docs/publishing.md` describes. They are built with pocketfft and without netCDF, so
+`volume` kernels are not written as model files from them; sections and
+maps are.
 
 ## Differences from the Fortran YSpec
 
@@ -362,7 +633,8 @@ displacement by differences and reciprocity, kernels against finite
 differences of their measurement in every treatment of gravity); and four
 end-to-end cases compared with the Fortran's seismograms.
 The scripts in `tests/fortran` regenerate the reference data from a checkout
-of the Fortran YSpec.
+of the Fortran YSpec. `pytest` runs the Python package's tests, which check
+it against the programs' input files, through the same library.
 
 ## References
 

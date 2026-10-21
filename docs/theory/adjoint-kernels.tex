@@ -360,8 +360,12 @@ $C\epsilon^\circ_{rr}\epsilon_{rr} + A\,\mathrm{tr}_h\bm\epsilon^\circ\,
 \mathrm{tr}_h\bm\epsilon^\circ\epsilon_{rr}) + 4L\,\bm\epsilon^\circ_{rh}
 \cdot\bm\epsilon_{rh} + N(2\bm\epsilon^\circ_{hh}:\bm\epsilon_{hh} -
 2\,\mathrm{tr}_h\bm\epsilon^\circ\,\mathrm{tr}_h\bm\epsilon)$, every term
-invariant under rotation about $\br$, so the two fields may be expressed in
-different horizontal frames. With $D(\omega)$ the dispersion of YSpec, so
+invariant under a common rotation about $\br$. The two fields may therefore
+be expressed in different horizontal frames provided one is turned into the
+other's: with spin components $a_\pm = a_\theta\mp ia_\phi$, a frame turned
+by $\gamma$ about $\br$ multiplies the components of spin weight $N$ by
+$e^{iN\gamma}$, so only the terms of $L$ and $N$ need the turn. With
+$D(\omega)$ the dispersion of YSpec, so
 that a modulus $X$ with inverse quality factor $q_X$ is $X(1+q_XD)$ at
 $\omega_\varepsilon$,
 \begin{equation}
@@ -613,8 +617,8 @@ their strains as the spin components $N=-2,\dots,2$.
   functions, and for displacements $\oint\bs\cdot\sd\dd\Omega =
   \sum_{lm}(-1)^m[U_mU^\circ_{-m} + \zeta^2(V_mV^\circ_{-m} +
   W_mW^\circ_{-m})]$; there is no spatial mesh. The kernels are evaluated at
-  Gauss--Legendre nodes in elements between the knots of the model, the
-  source and the receiver, and the radial integral in $K^{1D,\Phi}_\rho$ is
+  Gauss--Legendre nodes in elements between the discontinuities of the
+  model, the source and the receiver, and the radial integral in $K^{1D,\Phi}_\rho$ is
   taken on the same nodes. With $\bar M_h - 2\bar M_{rr} + r\bar m_r =
   \rho\big[\zeta^2\sum(-1)^m(V_mU^\circ_{-m} + U_mV^\circ_{-m}) -
   4\sum(-1)^mU_mU^\circ_{-m}\big]$ summed over degree, its integrand is the
@@ -622,17 +626,27 @@ their strains as the spin components $N=-2,\dots,2$.
   - s_r\nabla_h\cdot\sd_h) - (4g/r)s_rs^\circ_r$ of the local kernel, divided
   by $g/\rho$.
 \item Three-dimensional kernels, for the elastic parameters, need the
-  fields on a mesh. Expansions of spin-weighted fields rotate one $N$ at a
-  time, so each field is rotated from its own frame to geographic
-  coordinates with Wigner matrices (cheaply, since only a few orders are
-  present) and synthesised on a Gauss--Legendre grid at each radius; the
-  kernels are pointwise products integrated over frequency. No $\lambda$ is
-  needed. A cross-section through source and receiver is far cheaper than a
-  full mesh.
+  fields at the points of a mesh. Each field is evaluated in its own frame,
+  the forward field's with the source at the pole, where it has the orders
+  $|m|\le2$ alone, and the adjoint field's with the receiver at the pole,
+  where it has $|m|\le1$: at each point a sum over degree of a few terms,
+  with $X^N_{lm}$ at the point's distances from the source and from the
+  receiver. The adjoint strain's spin components are then turned into the
+  forward field's frame by $e^{-iN\gamma}$, with $\gamma$ the angle between
+  the two frames' $\hat{\bm\theta}$ at the point, and the kernels are the
+  pointwise products integrated over frequency. No rotation of expansions,
+  and no $\lambda$, is needed. The mesh is that of a planetmodel model file:
+  nodes in each layer, both sides of each discontinuity included, and a
+  Gauss--Legendre grid at each. Its cost is that of the sums at every point,
+  of order the number of points times the number of frequencies times the
+  largest degree.
 \item Checks: finite differences of $J$ for spherically symmetric
-  perturbations of every parameter, density with gravity included, and the
-  angular integrals of the three-dimensional elastic kernels against the
-  one-dimensional ones.
+  perturbations of every parameter, density with gravity included; the
+  integrals of the three-dimensional elastic kernels over every sphere
+  against the one-dimensional ones; their values at single points against
+  those computed in the source's frame alone, where the adjoint field, its
+  force away from the pole, has every order; and their symmetry for an
+  explosion and a vertical component.
 \end{itemize}
 One restriction: a receiver must be where YSpec can place a source, that is,
 in a solid.
