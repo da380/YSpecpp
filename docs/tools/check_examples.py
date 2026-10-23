@@ -224,8 +224,8 @@ def check_sampled_grid_contract(section_file, map_file, source_location,
 def check_kernel_outputs(directory, prefix, source_location, probe_truncation=False):
     measurement = directory / f'{prefix}.measurement'
     data = numeric_rows(measurement, 4)
-    if len(data) != 61 or not any(row[1] != 0 for row in data):
-        raise RuntimeError(f'{measurement}: expected 61 samples and a nonzero seismogram')
+    if len(data) != 1201 or not any(row[1] != 0 for row in data):
+        raise RuntimeError(f'{measurement}: expected 1,201 finite samples and a nonzero seismogram')
     if not any(row[2] != 0 for row in data) or not any(row[3] != 0 for row in data):
         raise RuntimeError(f'{measurement}: expected a nonzero window and adjoint source')
 
@@ -315,12 +315,12 @@ def main():
         if len(rows) != 2 or not rows[0].startswith('#') or rows[1].split()[0] != first_trace.name:
             raise RuntimeError(f'{receivers}: expected a header and one row naming {first_trace.name}')
         rows = finite_rows(first_trace, 4)
-        if len(rows) != 91:
-            raise RuntimeError(f'{first_trace}: expected 91 time samples, got {len(rows)}')
+        if len(rows) != 18001:
+            raise RuntimeError(f'{first_trace}: expected 18,001 time samples, got {len(rows)}')
         times = [float(row.split()[0]) for row in rows]
-        if any(not math.isclose(time, 20.0 * index, rel_tol=0.0, abs_tol=1e-9)
+        if any(not math.isclose(time, float(index), rel_tol=0.0, abs_tol=1e-9)
                for index, time in enumerate(times)):
-            raise RuntimeError(f'{first_trace}: expected times from 0 to 1800 s at 20 s intervals')
+            raise RuntimeError(f'{first_trace}: expected times from 0 to 18,000 s at 1 s intervals')
         if not any(float(row.split()[1]) != 0.0 for row in rows):
             raise RuntimeError(f'{first_trace}: expected a nonzero vertical displacement trace')
         run([build / 'bin/yspec', work / 'workflows/input.json'], env)
@@ -346,8 +346,14 @@ def main():
         run([python.parent / 'yspec', python_seismo / 'input.json'], python_env)
         python_trace = python_seismo / 'first-seismogram.out.1'
         rows = finite_rows(python_trace, 4)
-        if len(rows) != 91 or not any(float(row.split()[1]) != 0 for row in rows):
-            raise RuntimeError(f'{python_trace}: expected 91 samples and a nonzero vertical trace')
+        if len(rows) != 18001:
+            raise RuntimeError(f'{python_trace}: expected 18,001 time samples, got {len(rows)}')
+        times = [float(row.split()[0]) for row in rows]
+        if any(not math.isclose(time, float(index), rel_tol=0.0, abs_tol=1e-9)
+               for index, time in enumerate(times)):
+            raise RuntimeError(f'{python_trace}: expected times from 0 to 18,000 s at 1 s intervals')
+        if not any(float(row.split()[1]) != 0 for row in rows):
+            raise RuntimeError(f'{python_trace}: expected a nonzero vertical trace')
 
         python_snapshot = work / 'python-snapshot'
         python_snapshot.mkdir()
@@ -372,9 +378,9 @@ def main():
         plotter = python.parent / 'yspec-plot'
         run([plotter, 'traces', python_seismo / 'input.json', '--receivers', '1',
              '--components', 'ZRT', '-o', python_seismo / 'traces.png'], python_env)
-        run([plotter, 'kernels', python_kernels / 'input.json', '--measurement', 'S',
+        run([plotter, 'kernels', python_kernels / 'input.json', '--measurement', 'shear-packet',
              '--deepest', '1500', '-o', python_kernels / 'radial.png'], python_env)
-        run([plotter, 'banana', python_kernels / 'input.json', '--measurement', 'S',
+        run([plotter, 'banana', python_kernels / 'input.json', '--measurement', 'shear-packet',
              '--parameter', 'vs', '-o', python_kernels / 'section.png'], python_env)
         for image in (python_seismo / 'traces.png', python_kernels / 'radial.png',
                       python_kernels / 'section.png'):
@@ -385,6 +391,10 @@ def main():
         # exposes the expected model variables when its option is enabled.
         volume_off = work / 'python-volume-off'
         copy_kernel_fixture(volume_off, 'kernels-volume-small.json')
+        volume_input = json.loads((volume_off / 'input.json').read_text())
+        measurement_names = [item['name'] for item in volume_input['measurements']]
+        if measurement_names != ['execution-smoke']:
+            raise RuntimeError('the cheap volume fixture must remain explicitly execution-only')
         refused = subprocess.run([python.parent / 'yspec-kernels',
                                   volume_off / 'input.json'], cwd=ROOT,
                                  env=python_env, capture_output=True, text=True)

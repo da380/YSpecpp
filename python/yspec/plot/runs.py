@@ -3,6 +3,7 @@
 import json
 import math
 import pathlib
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -51,6 +52,8 @@ class Receiver:
 
     number: int
     file: pathlib.Path
+    latitude: float
+    longitude: float
     depth: float          # km
     distance: float       # degrees
     azimuth: float        # degrees, at the source
@@ -93,14 +96,17 @@ class SeismogramRun:
                 if not line.startswith("#")]
         rows = [row for row in rows if row[1] == self.source]
         self.receivers = []
-        for number, (row, instrumented) in enumerate(
+        for number, (row, instrument_unit) in enumerate(
                 zip(rows, self._instruments()), start=1):
-            file, _, _, _, depth, distance, azimuth, back = row
+            file, _, latitude, longitude, depth, distance, azimuth, back = row
             self.receivers.append(Receiver(
-                number=number, file=prefix.parent / file, depth=float(depth),
+                number=number, file=prefix.parent / file,
+                latitude=float(latitude), longitude=float(longitude),
+                depth=float(depth),
                 distance=float(distance), azimuth=float(azimuth),
                 back_azimuth=float(back),
-                units=("instrument output" if instrumented
+                units=(instrument_unit or "instrument output (unit unspecified)"
+                       if instrument_unit is not False
                        else UNITS[self.quantity])))
 
     def receiver(self, number):
@@ -120,8 +126,18 @@ class SeismogramRun:
             depths = len(depths) if isinstance(depths, list) else 1
             places = (len(group["locations"]) if "locations" in group
                       else group["profile"]["count"])
+            output_unit = False
+            if "instrument" in group:
+                instrument = self.path.parent / group["instrument"]
+                try:
+                    text = instrument.read_text(errors="replace")
+                except OSError:
+                    text = ""
+                match = re.search(r"^\s*\*\s*OUTPUT\s+UNIT\s*:\s*(\S.*?)\s*$",
+                                  text, flags=re.IGNORECASE | re.MULTILINE)
+                output_unit = match.group(1).strip() if match else None
             for _ in range(depths * places):
-                yield "instrument" in group
+                yield output_unit
 
 
 class SnapshotRun:
@@ -149,6 +165,10 @@ class SnapshotRun:
         self.depths = np.unique(first[:, 0])
         self.distances = np.unique(first[:, 1])
         self.azimuths = np.array(list(dict.fromkeys(first[:, 2])))
+        shape = (len(self.depths), len(self.azimuths), len(self.distances))
+        coordinates = first[:, 3:5].reshape(shape + (2,))[0]
+        self.latitude = coordinates[..., 0]
+        self.longitude = coordinates[..., 1]
 
     def field(self, time_index, component):
         """One component at one time, (depth, azimuth, distance)."""

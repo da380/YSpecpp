@@ -14,17 +14,18 @@ import numpy as np
 from planetmodel.plotting import section
 from planetmodel.slices import SectionSlice, Shown, SliceLayer
 
-from .runs import KernelRun
+from .runs import KernelRun, UNITS
+from .kernels import _kernel_unit
+from ._labels import clipping_stats
 from .seismograms import COLOURS
 from .snapshots import GUIDE, STAR, _phase_boundaries
 from .volume import TRIANGLE
 
 
 def _parameter(run, parameter):
-    """The kernel drawn: as asked, or vs for a phase with a leg in S, else
-    vp."""
+    """The kernel drawn: as asked, or vs for transverse/shear measurements."""
     if parameter is None:
-        parameter = "vs" if "S" in run.name else "vp"
+        parameter = "vs" if run.component == "T" or "S" in run.name else "vp"
     if parameter not in run.parameters:
         raise ValueError(f"there is no kernel of {parameter}: there are "
                          f"{', '.join(run.parameters)}")
@@ -68,15 +69,27 @@ def _deepest(run):
     return 0.0 if "K" in run.name else 3000.0
 
 
+def _extent_label(run):
+    """The radial extent shown in a section (km)."""
+    deepest = _deepest(run)
+    return ("full radius" if deepest == 0 else
+            f"r ≥ {deepest:g} km")
+
+
 def _draw(ax, run, sampled, coordinate, parameter, limit, boundaries,
-          marks):
+          marks, stats):
     """A section in its plane, with the boundaries between solid and fluid
     and the marks (angle along it, radius, style) of the source and
     receiver, cropped to the depths the phase samples."""
-    label = f"K, {'ln ' if run.relative else ''}{parameter} (s m$^{{-3}}$)"
+    label = (f"K, {'ln ' if run.relative else ''}{parameter} "
+             f"[{_kernel_unit(parameter, run.relative)}]")
     cut = _slice(sampled, coordinate, parameter, label, run.surface)
     section(ax, cut, physical=True, diverging=True, vmin=-limit,
-            vmax=limit, interfaces=False)
+            vmax=limit, interfaces=False, colorbar=True)
+    maximum, fraction = stats
+    ax.text(0.02, 0.02, clipping_stats(limit, maximum, fraction),
+            transform=ax.transAxes, fontsize=6.5, va="bottom",
+            bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"})
     half = 0.5 * cut.length
     deepest = _deepest(run)
     arc = np.linspace(-half, half, 721)
@@ -115,6 +128,10 @@ def _trace(ax, run):
     ax.tick_params(labelsize=7)
     ax.text(0.01, 0.92, f"{run.name} on {run.component}",
             transform=ax.transAxes, va="top", fontsize=9)
+    ax.text(0.99, 0.92,
+            f"normalised amplitude / peak; peak {peak:.3g} "
+            f"{UNITS[run.quantity]}",
+            transform=ax.transAxes, va="top", ha="right", fontsize=7)
 
 
 def _marks(run):
@@ -122,6 +139,15 @@ def _marks(run):
     return ([(0.0, run.source_radius, STAR),
              (run.distance, surface - run.receiver_depth, TRIANGLE)],
             [])
+
+
+def _stats(sampled, parameter, limit):
+    values = np.concatenate([layer.values[parameter].ravel()
+                             for layer in sampled.layers])
+    finite = np.abs(values[np.isfinite(values)])
+    if finite.size == 0:
+        return 0.0, 0.0
+    return float(finite.max()), float(100.0 * np.mean(finite > limit))
 
 
 def banana(run, parameter=None, *, clear=5.0, clip=99.0):
@@ -135,23 +161,34 @@ def banana(run, parameter=None, *, clear=5.0, clip=99.0):
     keep = (np.abs(path.along) > clear) & (np.abs(path.along - run.distance) >
                                            clear)
     limit = _limit(run, path, parameter, keep, clip)
+    path_stats = _stats(path, parameter, limit)
+    across_limit = _limit(run, across, parameter,
+                          np.ones(len(across.across), bool), clip)
+    across_stats = _stats(across, parameter, across_limit)
     fig = plt.figure(figsize=(14, 9))
     grid = fig.add_gridspec(2, 2, height_ratios=[1, 4],
                             width_ratios=[2.2, 1])
     _trace(fig.add_subplot(grid[0, :]), run)
     on_path, _ = _marks(run)
     ax = fig.add_subplot(grid[1, 0])
-    _draw(ax, run, path, path.along, parameter, limit, boundaries, on_path)
-    ax.set_title("along the path", fontsize=9)
+    _draw(ax, run, path, path.along, parameter, limit, boundaries, on_path,
+          path_stats)
+    ax.set_title(f"along the path\n{_extent_label(run)}", fontsize=9)
     ax = fig.add_subplot(grid[1, 1])
-    _draw(ax, run, across, across.across, parameter,
-          _limit(run, across, parameter, np.ones(len(across.across), bool),
-                 clip), boundaries, [])
-    ax.set_title("across it, at its middle", fontsize=9)
+    _draw(ax, run, across, across.across, parameter, across_limit, boundaries,
+          [], across_stats)
+    ax.set_title(f"across it, at its middle\n{_extent_label(run)}",
+                 fontsize=9)
     measured = run.description.removeprefix("radial kernels of ")
     fig.suptitle(f"The kernel of {'ln ' if run.relative else ''}{parameter} "
                  f"for {measured}; colours saturate near the source (star) "
                  f"and the receiver (triangle)", fontsize=10)
+    fig.text(0.5, 0.008,
+             f"Each panel has its own symmetric {clip:g}th-percentile limit; "
+             f"limits exclude depths above 150 km, and the along-path limit "
+             f"also excludes points within {clear:g}° of source and receiver. "
+             "Section colours are interpolated for display between saved samples.",
+             ha="center", va="bottom", fontsize=7)
     fig.tight_layout()
     return fig
 
@@ -171,20 +208,31 @@ def gallery(path, parameter=None, *, clear=5.0, clip=99.0):
         boundaries, _ = _phase_boundaries(run.model)
         keep = (np.abs(along.along) > clear) & (
             np.abs(along.along - run.distance) > clear)
+        along_limit = _limit(run, along, chosen, keep, clip)
+        along_stats = _stats(along, chosen, along_limit)
+        across_limit = _limit(run, across, chosen,
+                              np.ones(len(across.across), bool), clip)
+        across_stats = _stats(across, chosen, across_limit)
         _trace(fig.add_subplot(grid[row, 0]), run)
         on_path, _ = _marks(run)
         ax = fig.add_subplot(grid[row, 1])
-        _draw(ax, run, along, along.along, chosen,
-              _limit(run, along, chosen, keep, clip), boundaries, on_path)
+        _draw(ax, run, along, along.along, chosen, along_limit, boundaries,
+              on_path, along_stats)
         ax.set_title(f"{run.name}: {'ln ' if run.relative else ''}{chosen}, "
-                     f"along the path", fontsize=9)
+                     f"along the path\n{_extent_label(run)}", fontsize=9)
         ax = fig.add_subplot(grid[row, 2])
-        _draw(ax, run, across, across.across, chosen,
-              _limit(run, across, chosen, np.ones(len(across.across), bool),
-                     clip), boundaries, [])
-        ax.set_title("across it, at its middle", fontsize=9)
+        _draw(ax, run, across, across.across, chosen, across_limit,
+              boundaries, [], across_stats)
+        ax.set_title(f"across it, at its middle\n{_extent_label(run)}",
+                     fontsize=9)
     fig.suptitle("Traveltime kernels by cross-correlation in the windows "
                  "shaded; colours saturate near the source (star) and "
                  "receiver (triangle)", fontsize=11)
+    fig.text(0.5, 0.003,
+             f"Each panel has its own symmetric {clip:g}th-percentile limit; "
+             f"limits exclude depths above 150 km, and along-path limits "
+             f"also exclude points within {clear:g}° of source and receiver. "
+             "Section colours are interpolated for display between saved samples.",
+             ha="center", va="bottom", fontsize=7)
     fig.tight_layout()
     return fig
