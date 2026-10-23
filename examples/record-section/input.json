@@ -1,19 +1,60 @@
 {
   "model": "../prem.200",
+  "attenuation": false,
   "gravity": "full",
-  "output": { "prefix": "section", "quantity": "velocity" },
-  "degrees": { "max": 500 },
-  "frequencies_mHz": { "min": 0.2, "max": 25 },
-  "time_series": { "length_min": 60, "time_step_s": 2 },
-  "filter_mHz": [1, 2, 22, 25],
-  "sources": [
-    { "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
-      "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
-                            "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 } }
+  "output": {
+    "quantity": "displacement",
+    "prefix": "section"
+  },
+  "degrees": {
+    "min": 0,
+    "max": 300
+  },
+  "frequencies_mHz": {
+    "min": 1.5,
+    "max": 21.0
+  },
+  "time_series": {
+    "length_min": 300.0,
+    "time_step_s": 1.0
+  },
+  "filter_mHz": [
+    1.9,
+    2.0,
+    20.0,
+    20.1
   ],
+  "sources": [
+    {
+      "depth_km": 647.1,
+      "latitude": -13.909919806613164,
+      "longitude": -67.25,
+      "moment_tensor_Nm": {
+        "rr": -7.59e+20,
+        "rt": -2.5e+21,
+        "rp": 4.2e+19,
+        "tt": 7.75e+20,
+        "tp": -2.48e+20,
+        "pp": -1.6e+19
+      }
+    }
+  ],
+  "solver": {
+    "tolerance": 1e-05
+  },
   "receivers": {
-    "depth_km": 3,
-    "profile": { "from": [36.87, 35.58], "azimuth_deg": 60,
-                 "distances_deg": [5, 175], "count": 35 }
+    "depth_km": 3.0,
+    "profile": {
+      "from": [
+        -13.909919806613164,
+        -67.25
+      ],
+      "azimuth_deg": 9.3523214497609,
+      "distances_deg": [
+        5.0,
+        175.0
+      ],
+      "count": 35
+    }
   }
 }

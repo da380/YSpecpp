@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Writes the inputs of the gallery of kernels: gallery.json, the traveltimes
-of P, PP, S, ScS and SS at 60 degrees, and diffracted.json, those of Pdiff and
-Sdiff at 110 degrees, each phase measured in a window about its arrival in
-PREM, from TauP, one dominant period before it and one and a half after, with
-tapers of half a period.
+"""Writes inputs with cross-correlation windows centred on PREM TauP ray times.
+
+The phase names are labels for the targeted arrivals and CLI selection, not a
+claim that a finite-frequency window isolates a single phase. The generated
+windows can contain depth phases or other branches; inspect the reported
+co-arrivals and validate each filtered waveform before interpreting its
+kernel as a phase-specific sensitivity. The high-frequency gallery band and
+the longer-period diffracted band are specialized packet demonstrations, not
+the Bolivia comparison setup used by the first-seismogram guide.
 
     python make_input.py    # in an environment with yspec-seismo[obspy]
 
@@ -18,6 +22,7 @@ from obspy.taup import TauPyModel
 
 AZIMUTH = 70.0  # degrees, clockwise from north at the source
 DEPTH = 29.5    # km
+RECEIVER_DEPTH = 3.0  # km; use the depth specified by the YSpec input
 
 # Each run: its receiver's distance (degrees), the phases measured and on
 # which components, the dominant period of its band (s), and what differs
@@ -73,14 +78,15 @@ OTHERS = ["P", "pP", "sP", "PcP", "pPcP", "PP", "pPP", "sPP", "PPP", "PS",
 
 def measure(model, distance, phase, component, period):
     """The measurement of a phase, and what else arrives in its window."""
-    arrivals = model.get_travel_times(source_depth_in_km=DEPTH,
-                                      distance_in_degree=distance,
-                                      phase_list=[phase])
+    arrivals = model.get_travel_times(
+        source_depth_in_km=DEPTH, receiver_depth_in_km=RECEIVER_DEPTH,
+        distance_in_degree=distance, phase_list=[phase])
     time = min(a.time for a in arrivals)
     start = round(time - period)
     end = round(time + 1.5 * period)
     others = sorted({(round(a.time), a.name) for a in model.get_travel_times(
-        source_depth_in_km=DEPTH, distance_in_degree=distance,
+        source_depth_in_km=DEPTH, receiver_depth_in_km=RECEIVER_DEPTH,
+        distance_in_degree=distance,
         phase_list=OTHERS) if start <= a.time <= end and a.name != phase})
     print(f"{phase:5s} on {component} at {distance:g} degrees: arrives at "
           f"{time:7.1f} s, window {start} to {end} s; with "
@@ -109,7 +115,8 @@ def main():
                                       "rp": 6.99e17, "tt": -2.976e18,
                                       "tp": 6.54e17, "pp": 2.55e18}}
             ],
-            "receiver": {"depth_km": 3, "distance_deg": run["distance"],
+            "receiver": {"depth_km": RECEIVER_DEPTH,
+                         "distance_deg": run["distance"],
                          "azimuth_deg": AZIMUTH},
             "measurements": [measure(model, run["distance"], phase,
                                      component, run["period"])
