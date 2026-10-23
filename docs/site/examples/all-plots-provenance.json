@@ -20,14 +20,19 @@
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/snapshots.py",
-      "plotter_sha256": "0a9bea22d366c93f0c329928999536bf6fcb7312afe0bffa92689ea0757d987d",
+      "plotter_sha256": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
-      "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md",
+      "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md; PR5 P2 fixes uncommitted on 26e9ae1",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": null,
-        "evidence_path": "/tmp/yspecpp-renderer-phase2b-20261023/phase2c/cross-up.png",
-        "sha256": "3da4cc0fdb88ecc8dd4529461bafcfbb76e0d28b30eedc1bb9818cccd14e3e96"
+        "evidence_path": "/tmp/yspecpp-pr5-p2-fixes-20261023/phase2c/cross-up.png",
+        "sha256": "cc174f61c4265382170c4af6c59684e1eeb3e8b191323c8f6f0a53702d333361",
+        "render_input": {
+          "path": "/tmp/yspecpp-phase2c-runs-20261023/cross-section/input.json",
+          "sha256": "3bc1462dd6f5814fa03d6a0d0df08fe549b268bb7aa7f77f22f5bbbf1f722a26",
+          "note": "Saved-output rendering input with the model and output paths resolved in the evidence directory; no numerical samples were recomputed."
+        }
       },
       "render_environment": {
         "python": "3.12.3",
@@ -52,7 +57,7 @@
           "/tmp/yspecpp-phase2c-runs-20261023/cross-section/section.5": "d08252429717519564aa575922db954afacb2f8a2428eee5f59aa690a1ad24b6",
           "/tmp/yspecpp-phase2c-runs-20261023/cross-section/section.6": "66e90f63d080680cc636d222b0a1a4c21f28f813d8980b3744b2c1ae8c4185f2"
         },
-        "note": "Current-source six-time cross-section output; saved sample interpolation is disclosed, and missing radial data stays split at interfaces."
+        "note": "Current-source six-time cross-section output; saved sample interpolation is disclosed, and missing radial data stays split at interfaces. PR5 P2 renderer retained exact interface samples on solver-selected sides; saved snapshots were unchanged."
       },
       "scientific_status": "numerical convergence unresolved",
       "phase1_status": "corrected",
@@ -73,14 +78,19 @@
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/snapshots.py",
-      "plotter_sha256": "0a9bea22d366c93f0c329928999536bf6fcb7312afe0bffa92689ea0757d987d",
+      "plotter_sha256": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
-      "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md",
+      "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md; PR5 P2 fixes uncommitted on 26e9ae1",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": null,
-        "evidence_path": "/tmp/yspecpp-renderer-phase2b-20261023/phase2c/cross-away.png",
-        "sha256": "426e7da1edd3a97d33e7144e0ef47d8d5394149250d89576c064e16caad8f9d2"
+        "evidence_path": "/tmp/yspecpp-pr5-p2-fixes-20261023/phase2c/cross-away.png",
+        "sha256": "7b5127189d8d28dcb0e97b70e20fc8e3ad693b70655f17e662c51679cd97de0d",
+        "render_input": {
+          "path": "/tmp/yspecpp-phase2c-runs-20261023/cross-section/input.json",
+          "sha256": "3bc1462dd6f5814fa03d6a0d0df08fe549b268bb7aa7f77f22f5bbbf1f722a26",
+          "note": "Saved-output rendering input with the model and output paths resolved in the evidence directory; no numerical samples were recomputed."
+        }
       },
       "render_environment": {
         "python": "3.12.3",
@@ -105,7 +115,7 @@
           "/tmp/yspecpp-phase2c-runs-20261023/cross-section/section.5": "d08252429717519564aa575922db954afacb2f8a2428eee5f59aa690a1ad24b6",
           "/tmp/yspecpp-phase2c-runs-20261023/cross-section/section.6": "66e90f63d080680cc636d222b0a1a4c21f28f813d8980b3744b2c1ae8c4185f2"
         },
-        "note": "Current-source six-time cross-section output; saved sample interpolation is disclosed, and missing radial data stays split at interfaces."
+        "note": "Current-source six-time cross-section output; saved sample interpolation is disclosed, and missing radial data stays split at interfaces. PR5 P2 renderer retained exact interface samples on solver-selected sides; saved snapshots were unchanged."
       },
       "scientific_status": "numerical convergence unresolved",
       "phase1_status": "corrected",
@@ -796,7 +806,7 @@
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/snapshots.py",
-      "plotter_sha256": "0a9bea22d366c93f0c329928999536bf6fcb7312afe0bffa92689ea0757d987d",
+      "plotter_sha256": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
       "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md",
       "render_status": "rendered",
@@ -1012,14 +1022,19 @@
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "docs/site/examples/plot_first_seismogram.py",
-      "plotter_sha256": "b8c6aecb046c41eb5ef03f5558a6599c24fb9d12bde0abb87fe8e3e01bfb2dfc",
+      "plotter_sha256": "663ed44a12176d9d20dfa3c6e7536dd7c4a3cbb0615f8b5f7609f2e16d9f14a7",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
-      "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md",
+      "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md; PR5 P2 fixes uncommitted on 26e9ae1",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": "docs/site/assets/first-seismogram.svg",
-        "evidence_path": "/tmp/yspecpp-renderer-phase2b-20261023/first-seismogram.svg",
-        "sha256": "4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b"
+        "evidence_path": "/tmp/yspecpp-pr5-p2-fixes-20261023/first-seismogram.svg",
+        "sha256": "4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b",
+        "render_input": {
+          "path": "/tmp/yspecpp-pr5-p2-fixes-20261023/first-seismogram-render.json",
+          "sha256": "157a189282b441753ebfd6573b4bdfa4abf6a8ffc46ca5e07a48c0a2b19cba9a",
+          "note": "Renderer copy changes only the output prefix and source name to match the saved trace; physics match the canonical fixture."
+        }
       },
       "render_environment": {
         "python": "3.12.3",
@@ -1040,7 +1055,7 @@
           "bolivia.out.1": "196c82b1f2ef926146fe5b32e219891374a4af632e75886e52353214f91d7021",
           "bolivia.out.receivers": "177529bdac3d900b3706b4724938181294425c0769b73e14d615649e6bb1d41b"
         },
-        "note": "Current Bolivia baseline; renderer-only JSON adjusted output prefix/source name to match saved filenames."
+        "note": "Current Bolivia baseline; renderer-only JSON adjusted output prefix/source name to match saved filenames. Current PR5 P2 render reads this saved trace and receiver table through a path-adjusted input copy."
       },
       "scientific_status": "duration gate failed; not a converged reference",
       "phase1_status": "needs correction",
@@ -1212,7 +1227,7 @@
     "python/yspec/plot/runs.py": "1ba39fca6ce2a20e02b4e8aeba65f1587784ec29a36213502a0b352ec7d92871",
     "python/yspec/plot/sections.py": "bb9e1cbfa1483377fc648cd03f48c0c22453da2d8fa0f6c315b81b98ebc5e762",
     "python/yspec/plot/seismograms.py": "aac9a45d7ffbc166d97dc42c1536870248bca817c88bcd110fecf98899fe0b5e",
-    "python/yspec/plot/snapshots.py": "0a9bea22d366c93f0c329928999536bf6fcb7312afe0bffa92689ea0757d987d",
+    "python/yspec/plot/snapshots.py": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
     "python/yspec/plot/volume.py": "183de7667e627a8a18cf3d9741adfc87f2266f7b24532422146ddc89c9bfb132"
   }
 }

@@ -89,11 +89,27 @@ def _section_slice(run, field, surface, shown):
     duplicate = np.flatnonzero(np.diff(deck.radius) == 0)
     boundaries = np.unique(deck.radius[duplicate]) / 1e3
     shell = np.searchsorted(boundaries, radius, side="right")
-    on_boundary = np.any(np.isclose(radius[:, None], boundaries[None, :],
-                                    rtol=0, atol=1e-8), axis=1) if boundaries.size else np.zeros(radius.size, bool)
+    if boundaries.size:
+        # DepthSolves gives each exact interface radius to the solver's
+        # receiver constructor. It uses the solid side at solid-fluid
+        # boundaries and Side::Below (the lower-radius layer) otherwise.
+        # Keep each saved sample in that same shell; do not move or
+        # interpolate its value to either side.
+        shear = deck["vsv"] if "vsv" in deck else deck["vs"]
+        for index in duplicate:
+            boundary = deck.radius[index] / 1e3
+            matches = np.isclose(radius, boundary, rtol=0, atol=1e-8)
+            inner_fluid = shear[index] == 0
+            outer_solid = shear[index + 1] != 0
+            if inner_fluid and outer_solid:
+                shell[matches] = np.searchsorted(boundaries, boundary,
+                                                 side="right")
+            else:
+                shell[matches] = np.searchsorted(boundaries, boundary,
+                                                 side="left")
     layers = []
-    for index in np.unique(shell[~on_boundary]):
-        rows = (shell == index) & ~on_boundary
+    for index in np.unique(shell):
+        rows = shell == index
         if not np.any(rows):
             continue
         layers.append(SliceLayer(index=int(index), radius=np.array(grid[rows]),
@@ -138,7 +154,8 @@ def _draw_section(ax, run, field, surface, boundaries, shown, limits,
     for layer in isolated:
         angle = np.broadcast_to(slice_.distance, layer.radius.shape)
         turn = angle - 0.5 * slice_.length
-        ax.scatter(turn, layer.radius, c=layer.values, cmap=cmap, norm=norm,
+        ax.scatter(turn.ravel(), layer.radius.ravel(),
+                   c=layer.values.ravel(), cmap=cmap, norm=norm,
                    s=2, linewidths=0)
     if not meshes:
         meshes = [ScalarMappable(norm=norm, cmap=cmap)]
@@ -255,19 +272,22 @@ def snapshots(run, component="up", *, common=False, clip=99.5,
                if is_section or is_map else
                "line amplitudes shown in native units")
     display_note = (
-        "Gouraud shading interpolates colours between saved samples; it adds "
-        "no numerical resolution."
+        "At exact interfaces, samples use the solver's solid side, or the "
+        "deeper side otherwise. Gouraud shading interpolates colours between "
+        "saved samples; it adds no numerical resolution."
         if is_section else
         "Saved map samples are assigned to nearest-colour cells; amplitudes "
         "are not interpolated."
         if is_map else "")
     if is_section or is_map:
-        fig.suptitle(f"{shown.label}, source {run.source}")
+        fig.suptitle(f"{shown.label}, source {run.source}",
+                     y=0.995 if is_section else 0.98)
         caption = textwrap.fill(f"{scaling}. {display_note}", width=58)
-        fig.text(0.5, 0.965, caption, ha="center", va="top", fontsize=8)
-        # The wrapped caption occupies a fixed band above the panels, even
-        # for a single narrow panel where a long title would otherwise clip.
-        fig.subplots_adjust(top=0.88)
+        fig.text(0.5, 0.955 if is_section else 0.965, caption,
+                 ha="center", va="top", fontsize=8)
+        # Separate the figure title, wrapped caption and panel titles on
+        # sections with the interface-side note.
+        fig.subplots_adjust(top=0.84 if is_section else 0.88)
     else:
         fig.suptitle(f"{shown.label}, source {run.source} ({scaling})")
     if is_section or is_map:

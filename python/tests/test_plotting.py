@@ -1,7 +1,10 @@
 """Small regressions for plot interpretation and coordinate contracts."""
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -104,6 +107,44 @@ def test_instrument_plot_unit_comes_from_sac_metadata(tmp_path):
     assert run.receiver(1).units == "COUNTS"
 
 
+def test_first_seismogram_plot_uses_the_selected_receivers_units(tmp_path):
+    (tmp_path / "broadband.pz").write_text(
+        "  *  INPUT UNIT : M/S\n   *   OUTPUT   UNIT : COUNTS  \n"
+        "ZEROS 0\nPOLES 0\n")
+    (tmp_path / "ground.1").write_text(
+        "0 1 0 0\n1 -0.5 0 0\n")
+    (tmp_path / "instrument.1").write_text(
+        "0 1 0 0\n1 -0.5 0 0\n")
+    (tmp_path / "out.receivers").write_text(
+        "# file source latitude longitude depth_km distance_deg azimuth_deg back_azimuth_deg\n"
+        "ground.1 1 12 30 3 20 40 220\n"
+        "instrument.1 1 13 31 3 25 45 225\n")
+    config = {
+        "output": {"prefix": "out", "quantity": "displacement"},
+        "sources": [{"name": "1"}],
+        "receivers": [
+            {"depth_km": 3, "locations": [[12, 30]]},
+            {"depth_km": 3, "locations": [[13, 31]],
+             "instrument": "broadband.pz"},
+        ],
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(config))
+    script = Path(__file__).parents[2] / "docs" / "site" / "examples" / "plot_first_seismogram.py"
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1]),
+           "MPLCONFIGDIR": str(tmp_path / "mplconfig")}
+
+    for trace, expected in (("ground.1", "Up component (m)"),
+                            ("instrument.1", "Up component (COUNTS)")):
+        output = tmp_path / f"{trace}.svg"
+        completed = subprocess.run(
+            [sys.executable, str(script), str(tmp_path / trace),
+             str(output), str(input_path)], check=True, capture_output=True,
+            text=True, env=env)
+        assert expected in output.read_text()
+        assert expected.split("(")[1].rstrip(")") in completed.stdout
+
+
 class FakeMapAxes:
     def __init__(self):
         self.args = None
@@ -182,6 +223,85 @@ def test_snapshot_sections_reject_skewed_azimuths_and_gap_duplicate_origin():
     assert np.unique(cut.path, axis=0).shape[0] == cut.path.shape[0]
     assert len(cut.layers) > 1
     assert any(np.isnan(layer.values).any() for layer in cut.layers)
+
+
+def test_snapshot_render_keeps_solver_side_samples_at_prem_interfaces():
+    model = Path(__file__).parents[2] / "examples" / "prem.200"
+
+    class Run:
+        times = np.array([150.0, 300.0, 600.0, 900.0, 1200.0, 1500.0])
+        depths = np.array([2890.0, 2891.0, 2892.0,
+                           5148.5, 5149.5, 5150.5])
+        azimuths = np.array([0.0])
+        distances = np.array([10.0, 30.0, 60.0])
+        quantity = "displacement"
+        source = "1"
+        hypocentre = {"depth_km": 29.5}
+
+        def field(self, index, component):
+            return np.arange(18.0).reshape(6, 1, 3) + 1
+
+    Run.model = model
+    run = Run()
+    field = run.field(0, "up")
+    cut = _section_slice(
+        run, field, 6371.0,
+        Shown("up", dimensions=DIMENSIONS["displacement"]))
+    # At the PREM CMB, the outer side is solid (shell 2); at the ICB,
+    # the inner side is solid (shell 0), matching RadialSolver::SolidSide.
+    assert {layer.index for layer in cut.layers} == {0, 1, 2}
+    radii = {layer.index: layer.radius for layer in cut.layers}
+    assert np.max(radii[0]) <= 1221.5
+    assert np.min(radii[1]) > 1221.5 and np.max(radii[1]) < 3480.0
+    assert np.min(radii[2]) >= 3480.0
+    np.testing.assert_array_equal(
+        np.sort(np.concatenate([layer.values.ravel()
+                                for layer in cut.layers])),
+        np.sort(field.reshape(-1)))
+    fig = snapshots(run, component="up")
+    fig.canvas.draw()
+    assert len(fig.axes) == 12
+    caption = fig.texts[1]
+    assert "solid side" in caption.get_text()
+    caption_box = caption.get_window_extent()
+    assert caption_box.y1 < fig.texts[0].get_window_extent().y0
+    assert all(caption_box.y0 > ax.title.get_window_extent().y1
+               for ax in fig.axes if ax.get_title())
+
+
+def test_snapshot_renders_when_all_depths_are_prem_interfaces():
+    model = Path(__file__).parents[2] / "examples" / "prem.200"
+
+    class Run:
+        times = np.array([1.0])
+        depths = np.array([2891.0, 5149.5])
+        azimuths = np.array([0.0])
+        distances = np.array([10.0, 30.0, 60.0])
+        quantity = "displacement"
+        source = "1"
+        hypocentre = {"depth_km": 29.5}
+
+        def field(self, index, component):
+            return np.arange(6.0).reshape(2, 1, 3) + 1
+
+    Run.model = model
+    run = Run()
+    field = run.field(0, "up")
+    cut = _section_slice(
+        run, field, 6371.0,
+        Shown("up", dimensions=DIMENSIONS["displacement"]))
+    assert {layer.index for layer in cut.layers} == {0, 2}
+    np.testing.assert_array_equal(
+        np.sort(np.concatenate([layer.values.ravel()
+                                for layer in cut.layers])),
+        np.sort(field.reshape(-1)))
+    fig = snapshots(run, component="up")
+    fig.canvas.draw()
+    assert len(fig.axes) == 2
+    caption_box = fig.texts[1].get_window_extent()
+    assert caption_box.y1 < fig.texts[0].get_window_extent().y0
+    assert all(caption_box.y0 > ax.title.get_window_extent().y1
+               for ax in fig.axes if ax.get_title())
 
 
 def test_snapshot_sections_show_units_limits_and_saturation_for_zero_fields():

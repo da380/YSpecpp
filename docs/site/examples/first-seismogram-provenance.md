@@ -128,7 +128,7 @@ The section asset was rendered with the documented `--measurement shear-packet -
 | `docs/site/examples/first-seismogram.json` | `ce09532d22437c8e3266ff855f83dd05e039328bd2fe116522aa8ccf87ac7ab3` |
 | `examples/prem.200` | `4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea` |
 | Bolivia `bolivia.out.1` | `196c82b1f2ef926146fe5b32e219891374a4af632e75886e52353214f91d7021` |
-| `docs/site/examples/plot_first_seismogram.py` | `b8c6aecb046c41eb5ef03f5558a6599c24fb9d12bde0abb87fe8e3e01bfb2dfc` |
+| `docs/site/examples/plot_first_seismogram.py` | `663ed44a12176d9d20dfa3c6e7536dd7c4a3cbb0615f8b5f7609f2e16d9f14a7` |
 | `python/yspec/plot/seismograms.py` | `aac9a45d7ffbc166d97dc42c1536870248bca817c88bcd110fecf98899fe0b5e` |
 | `docs/site/examples/kernels-small.json` | `7b0efae842bff4b414b89eaecf209a986d6e918e0641e147cea0881d46009cc0` |
 | `python/yspec/plot/kernels.py` | `ebf0b79a4a2787aef2d2450e5ba9e50b153643a8c70de1873d19a92a1801d6db` |
@@ -140,3 +140,8 @@ The section asset was rendered with the documented `--measurement shear-packet -
 The first SVG and trace-strip were generated from `/tmp/yspecpp-phase2a-bolivia-20261023/base60/`; the renderer-only temporary JSON changed the output prefix and source name to match those saved filenames. The kernel outputs came from `/tmp/yspecpp-phase2c-runs-20261023/kernels-web/`. These absolute paths are provenance pointers for the local audit; the raw outputs are not distributed with the site.
 
 The final section-asset correction selects `vs` explicitly for the transverse `shear-packet`. The renderer now defaults transverse measurements to `vs`; the prior render had selected `vp` because the name lacked an uppercase `S`. The Phase 2B caption correction left the corrected-parameter kernel values unchanged. The along-path and cross-path panels now label the 3000 km radius crop; deeper values are omitted from the display, not shown as zero. Limit, slice-maximum (the evaluated slice maximum before clipping) and saturated-fraction annotations now occupy three short lines in each spatial panel; a single-parameter radial render was checked to keep its four-line scale and source-term footer within the figure canvas. The radial caption says that each parameter panel has an independent horizontal SI scale and that small plotted terms do not establish significance.
+
+
+## PR5 P2 trace-specific renderer refresh
+
+The tutorial renderer was run from the saved 18,001-sample Bolivia trace and its receiver table using a temporary input copy that changes only the output prefix and source name to locate those saved files. The renderer now resolves the matching receiver row before choosing distance and units. The regenerated SVG is byte-identical to the tracked illustration (SHA-256 `4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b`); no saved waveform was changed. The current renderer hash is `663ed44a12176d9d20dfa3c6e7536dd7c4a3cbb0615f8b5f7609f2e16d9f14a7`. The pre-existing 300-to-600-minute duration comparison still fails the 1% gate; the illustration remains an unresolved comparison setup, not a converged reference.
