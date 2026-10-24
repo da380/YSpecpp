@@ -52,21 +52,34 @@ TEST(Input, ReadsTheExample) {
   EXPECT_EQ(input.model, kExample.parent_path() / "prem.200");
   EXPECT_EQ(input.prefix, kExample.parent_path() / "yspec.out");
   EXPECT_EQ(c.gravity, Gravity::Full);
-  EXPECT_TRUE(c.attenuation);
-  EXPECT_EQ(c.quantity, Quantity::Velocity);
-  EXPECT_EQ(c.degrees.max, 600);
+  EXPECT_FALSE(c.attenuation);
+  EXPECT_EQ(c.quantity, Quantity::Displacement);
+  EXPECT_EQ(c.degrees.max, 300);
   // In SI units.
-  EXPECT_DOUBLE_EQ(c.band.max, 40e-3);
-  EXPECT_DOUBLE_EQ(c.sampling.duration, 3600);
+  EXPECT_DOUBLE_EQ(c.band.min, 1.5e-3);
+  EXPECT_DOUBLE_EQ(c.band.max, 21e-3);
+  EXPECT_DOUBLE_EQ(c.sampling.duration, 18000);
+  EXPECT_DOUBLE_EQ(c.sampling.timeStep, 1);
   ASSERT_TRUE(c.taper.has_value());
-  EXPECT_DOUBLE_EQ(c.taper->f4, 40e-3);
+  EXPECT_DOUBLE_EQ(c.taper->f1, 1.9e-3);
+  EXPECT_DOUBLE_EQ(c.taper->f2, 2.0e-3);
+  EXPECT_DOUBLE_EQ(c.taper->f3, 20.0e-3);
+  EXPECT_DOUBLE_EQ(c.taper->f4, 20.1e-3);
   ASSERT_EQ(input.sources.size(), 1u);
-  EXPECT_DOUBLE_EQ(input.sources[0].depth, 29.5e3);
-  EXPECT_DOUBLE_EQ(input.sources[0].moment.tt, -2.976e18);
+  EXPECT_DOUBLE_EQ(input.sources[0].depth, 647.1e3);
+  EXPECT_DOUBLE_EQ(input.sources[0].location.latitude, -13.909919806613164);
+  EXPECT_DOUBLE_EQ(input.sources[0].location.longitude, -67.25);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.rr, -7.59e20);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.rt, -2.5e21);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.rp, 4.2e19);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.tt, 7.75e20);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.tp, -2.48e20);
+  EXPECT_DOUBLE_EQ(input.sources[0].moment.pp, -1.6e19);
   EXPECT_EQ(input.names, std::vector<std::string>{"1"});
-  EXPECT_EQ(input.receivers.size(), 60u);
-  EXPECT_DOUBLE_EQ(input.receivers.back().location.longitude, 122);
-  EXPECT_DOUBLE_EQ(input.receivers.back().depth, 3e3);
+  ASSERT_EQ(input.receivers.size(), 1u);
+  EXPECT_DOUBLE_EQ(input.receivers[0].location.latitude, 80.06588632614357);
+  EXPECT_DOUBLE_EQ(input.receivers[0].location.longitude, 0);
+  EXPECT_DOUBLE_EQ(input.receivers[0].depth, 3e3);
 }
 
 TEST(Input, AppliesTheDefaults) {
@@ -301,10 +314,10 @@ TEST(Input, ReadsTheKernelExamples) {
   // The transverse direction is horizontal and of unit length.
   EXPECT_DOUBLE_EQ(s.direction.up, 0);
   EXPECT_NEAR(std::hypot(s.direction.north, s.direction.east), 1, 1e-12);
-  const auto& rayleigh = input.measurements[1];
-  EXPECT_EQ(rayleigh.name, "Rayleigh");
-  EXPECT_EQ(rayleigh.component, "Z");
-  EXPECT_DOUBLE_EQ(rayleigh.direction.up, 1);
+  const auto& long_period = input.measurements[1];
+  EXPECT_EQ(long_period.name, "long-period-Z-packet");
+  EXPECT_EQ(long_period.component, "Z");
+  EXPECT_DOUBLE_EQ(long_period.direction.up, 1);
   EXPECT_EQ(input.parameters, ParameterSet::Velocities);
   EXPECT_EQ(input.scaling, Scaling::Relative);
   EXPECT_EQ(input.calculation.quantity, Quantity::Velocity);

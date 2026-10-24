@@ -5,28 +5,51 @@ from planetmodel.deck import MINEOS, read_deck
 from planetmodel.plotting import BOUNDARY_STYLE, profile
 from planetmodel.slices import ProfileSlice, Shown, SliceLayer
 
+from .runs import UNITS
 from .seismograms import COLOURS
 from .snapshots import GUIDE, STAR, _phase_boundaries
 
 
+def _parameter_unit(parameter):
+    # Keep this list aligned with Kernels.cpp::Names(ParameterSet): these are
+    # the parameter names the solver can actually write to a kernel file.
+    units = {
+        "rho": "kg m$^{-3}$",
+        "vp": "m s$^{-1}$", "vs": "m s$^{-1}$",
+        "vpv": "m s$^{-1}$", "vph": "m s$^{-1}$",
+        "vsv": "m s$^{-1}$", "vsh": "m s$^{-1}$",
+        "A": "Pa", "C": "Pa", "F": "Pa", "L": "Pa", "N": "Pa",
+        "kappa": "Pa", "mu": "Pa",
+        "eta": "dimensionless",
+        "qA": "dimensionless", "qF": "dimensionless",
+        "qkappa": "dimensionless", "qmu": "dimensionless",
+    }
+    try:
+        return units[parameter]
+    except KeyError as error:
+        raise ValueError(f"unsupported kernel parameter: {parameter}") from error
+
+
+def _kernel_unit(parameter, relative):
+    """The units of a three-dimensional traveltime kernel."""
+    unit = "s m$^{-3}$"
+    if relative:
+        return unit
+    return f"{unit} per ({_parameter_unit(parameter)})"
+
+
 def _profile(radius, values, boundaries, name, lowest):
-    """The kernel at its radii as a profile slice, a layer for each span
-    between the deck's boundaries, carried out to the boundaries by linear
-    extrapolation from the nodes nearest them, which lie just inside, so
-    that the jumps are drawn at the boundaries themselves."""
+    """The saved kernel nodes, split into separate profile layers at boundaries.
+
+    Do not extrapolate near-boundary nodes to an interface: the output does
+    not provide one-sided interface values, and extrapolating can imply them.
+    """
     layers = []
     which = np.searchsorted(boundaries, radius)
     for index in np.unique(which):
         inside = which == index
         r = radius[inside]
         v = values[inside]
-        if len(r) >= 2:
-            lower = max(boundaries[index - 1], lowest) if index > 0 else r[0]
-            upper = boundaries[index] if index < len(boundaries) else r[-1]
-            below = v[0] + (v[1] - v[0]) * (lower - r[0]) / (r[1] - r[0])
-            above = v[-1] + (v[-1] - v[-2]) * (upper - r[-1]) / (r[-1] - r[-2])
-            r = np.concatenate([[lower], r, [upper]])
-            v = np.concatenate([[below], v, [above]])
         points = np.stack([np.zeros_like(r), np.zeros_like(r), r], axis=-1)
         layers.append(SliceLayer(index=int(index), radius=r, values=v,
                                  reference=points, physical=points))
@@ -55,10 +78,9 @@ def radial_kernels(run, names=None, *, deepest=None):
                      zorder=0, label="window")
     top.set_xlim(t[0], t[-1])
     top.set_xlabel("time after the origin (min)")
-    top.set_ylabel(f"{run.component}, {run.quantity}")
+    top.set_ylabel(f"{run.component}, {run.quantity} [{UNITS[run.quantity]}]")
     top.legend(fontsize=8, loc="upper right")
     top.set_title(run.description, fontsize=9)
-    unit = "s m$^{-3}$" if run.relative else "s m$^{-3}$ per unit"
     lowest = 0.0 if deepest is None else surface - deepest
     axes = []
     for j, name in enumerate(names):
@@ -80,27 +102,29 @@ def radial_kernels(run, names=None, *, deepest=None):
         point = run.at_source[name]
         ax.plot(0, run.source_radius, **STAR)
         if point != 0:
-            ax.annotate(f"P = {point:.2g} s" + ("" if run.relative else
-                                                " per unit"),
+            point_unit = ("s" if run.relative else
+                          f"s per ({_parameter_unit(name)})")
+            ax.annotate(f"P = {point:.2g} {point_unit}",
                         (0, run.source_radius), xytext=(4, -12),
                         textcoords="offset points", fontsize=7)
-        largest = np.abs(values[keep]).max()
-        ax.set_xlim(-1.1 * largest or -1, 1.1 * largest or 1)
+        largest = np.abs(values[keep]).max(initial=0.0)
+        limit = 1.1 * largest if largest else 1.0
+        ax.set_xlim(-limit, limit)
         ax.ticklabel_format(axis="x", style="sci", scilimits=(-2, 3))
         ax.tick_params(labelsize=8)
         ax.xaxis.get_offset_text().set_fontsize(8)
         ax.set_title(("ln " if run.relative else "") + name)
-        ax.set_xlabel(unit, fontsize=8)
+        ax.set_xlabel(_kernel_unit(name, run.relative), fontsize=8)
         if j > 0:
             ax.tick_params(labelleft=False)
     axes[0].set_ylabel("radius (km)")
     axes[0].set_ylim(lowest, surface)
     change = "δ ln X" if run.relative else "δX"
     fig.text(0.5, 0.005,
-             f"★ the source. P: the point part of a kernel there, from the jump "
-             f"in the displacement across the source's radius; the "
-             f"traveltime changes by the integral of K {change} r² dr, plus "
-             f"P {change} at the source.", ha="center", va="bottom",
-             fontsize=8)
-    fig.tight_layout(rect=(0, 0.03, 1, 1))
+             f"★ source; P is the concentrated source term.\n"
+             f"Kernel action: ∫K {change} r² dr + P {change}(source).\n"
+             "Each parameter panel uses its own horizontal SI scale.\n"
+             "Small plotted terms do not establish significance.",
+             ha="center", va="bottom", fontsize=7)
+    fig.tight_layout(rect=(0, 0.095, 1, 1))
     return fig

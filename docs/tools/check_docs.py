@@ -2,12 +2,180 @@
 """Check local HTML links, anchors, assets and authored code block wrappers."""
 import argparse
 import ast
+import copy
 import hashlib
 import json
+import re
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+PLOT_ASSETS = (
+    'docs/site/assets/first-seismogram.svg',
+    'docs/site/assets/traces-small.png',
+    'docs/site/assets/kernels-radial-small.png',
+    'docs/site/assets/kernels-section-small.png',
+)
+
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def plot_provenance_errors(manifest, root, site):
+    """Check current source hashes and the built copies of tracked plot assets."""
+    errors = []
+    figures = manifest.get('figures', [])
+    ids = [figure.get('id') for figure in figures]
+    if len(figures) != 21 or len(set(ids)) != 21:
+        errors.append('plot provenance must contain 21 unique figure IDs')
+    incomplete = [figure.get('id', '<unnamed>') for figure in figures
+                  if figure.get('render_status') != 'rendered']
+    if incomplete:
+        errors.append('plot provenance has incomplete renders: ' +
+                      ', '.join(incomplete))
+
+    def verify_hash(label, relative, expected):
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            errors.append(f'{label}: source path escapes repository: {relative}')
+            return
+        try:
+            actual = sha256(path)
+        except OSError as error:
+            errors.append(f'{label}: cannot read {relative}: {error}')
+            return
+        if actual != expected:
+            errors.append(f'{label}: hash mismatch for {relative}: expected '
+                          f'{expected}, found {actual}')
+
+    for figure in figures:
+        ident = figure.get('id', '<unnamed>')
+        for relative, expected in figure.get('input_hashes', {}).items():
+            verify_hash(f'{ident} input', relative, expected)
+        model = figure.get('model')
+        if model and figure.get('model_sha256'):
+            verify_hash(f'{ident} model', model, figure['model_sha256'])
+        source = figure.get('plotter_source')
+        if source and figure.get('plotter_sha256'):
+            verify_hash(f'{ident} plotter', source, figure['plotter_sha256'])
+        for relative, expected in figure.get('generator_hashes', {}).items():
+            verify_hash(f'{ident} generator', relative, expected)
+
+    for label in ('shared_plot_helpers', 'shared_plotter_modules'):
+        for relative, expected in manifest.get(label, {}).items():
+            verify_hash(label, relative, expected)
+
+    tracked = {(figure.get('render_output') or {}).get('tracked_path'): figure
+               for figure in figures
+               if (figure.get('render_output') or {}).get('tracked_path')}
+    if set(tracked) != set(PLOT_ASSETS):
+        errors.append('plot provenance must list exactly the four tracked site assets')
+    for relative in PLOT_ASSETS:
+        figure = tracked.get(relative)
+        if not figure:
+            continue
+        output_hash = figure.get('render_output', {}).get('sha256')
+        source = (root / relative).resolve()
+        try:
+            actual_source = sha256(source)
+        except OSError as error:
+            errors.append(f'plot asset: cannot read {relative}: {error}')
+            continue
+        if actual_source != output_hash:
+            errors.append(f'plot asset hash mismatch for {relative}: expected '
+                          f'{output_hash}, found {actual_source}')
+        built_relative = Path(relative).relative_to('docs/site')
+        built = site / built_relative
+        try:
+            actual_built = sha256(built)
+        except OSError as error:
+            errors.append(f'built plot asset: cannot read {built_relative}: {error}')
+            continue
+        if actual_built != output_hash:
+            errors.append(f'built plot asset hash mismatch for {built_relative}: '
+                          f'expected {output_hash}, found {actual_built}')
+    return errors
+
+
+
+def markdown_output_hash_errors(path, expected, label):
+    """Compare a current Markdown output table with its JSON hash source."""
+    try:
+        lines = path.read_text().splitlines()
+    except OSError as error:
+        return [f'{label}: cannot read Markdown table: {error}']
+    found = {}
+    errors = []
+    for line in lines:
+        if not line.lstrip().startswith('|'):
+            continue
+        cells = line.strip().strip('|').split('|')
+        if not cells:
+            continue
+        match = re.search(r'`([^`]+)`', cells[0])
+        if not match:
+            continue
+        name = match.group(1)
+        if name not in expected:
+            continue
+        hashes = re.findall(r'(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])', line)
+        if len(hashes) != 1:
+            errors.append(f'{label}: expected one SHA-256 in row {name}')
+        elif name in found:
+            errors.append(f'{label}: duplicate output row {name}')
+        else:
+            found[name] = hashes[0]
+    for name, digest in expected.items():
+        if name not in found:
+            errors.append(f'{label}: missing output row {name}')
+        elif found[name] != digest:
+            errors.append(f'{label}: output hash mismatch for {name}: expected '
+                          f'{digest}, found {found[name]}')
+    return errors
+
+
+def check_plot_provenance(site, root):
+    path = site / 'examples/all-plots-provenance.json'
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        return [f'plot provenance is invalid or missing: {error}']
+    errors = plot_provenance_errors(manifest, root, site)
+
+    markdown_outputs = {
+        figure.get('id'): (figure.get('render_output') or {}).get('sha256')
+        for figure in manifest.get('figures', [])
+    }
+    errors.extend(markdown_output_hash_errors(
+        site / 'examples/all-plots-provenance.md', markdown_outputs,
+        'all-plots Markdown table'))
+    phase2c_assets = {
+        (figure.get('render_output') or {}).get('tracked_path'):
+        (figure.get('render_output') or {}).get('sha256')
+        for figure in manifest.get('figures', [])
+        if (figure.get('render_output') or {}).get('tracked_path')
+    }
+    errors.extend(markdown_output_hash_errors(
+        site / 'examples/first-seismogram-provenance.md', phase2c_assets,
+        'Phase 2C asset Markdown table'))
+
+    # Prove that the guard catches a stale source hash without altering the
+    # built manifest or any repository file.
+    probe = copy.deepcopy(manifest)
+    first = probe['figures'][0]
+    input_path = next(iter(first.get('input_hashes', {})), None)
+    if input_path:
+        first['input_hashes'][input_path] = '0' * 64
+        probe_errors = plot_provenance_errors(probe, root, site)
+        if not any(' input: hash mismatch' in error for error in probe_errors):
+            errors.append('plot provenance stale-hash negative probe was not rejected')
+    else:
+        errors.append('plot provenance stale-hash negative probe has no input to alter')
+    return errors
 
 class Page(HTMLParser):
     def __init__(self):
@@ -159,9 +327,13 @@ def main():
             errors.append('published PREM model copy differs from examples/prem.200')
     except OSError as error:
         errors.append(f'could not verify the published PREM model copy: {error}')
+    root = Path(__file__).resolve().parents[2]
+    errors.extend(check_plot_provenance(site, root))
     if errors:
         print('\n'.join(errors), file=sys.stderr); return 1
-    print(f'Checked {len(html_files)} HTML pages, local links, anchors, assets and code-copy wrappers.')
+    print(f'Checked {len(html_files)} HTML pages, local links, anchors, assets, '
+          'code-copy wrappers, 21-figure provenance and Markdown hash tables '
+          '(including stale-hash probes).')
     return 0
 
 if __name__ == '__main__':
