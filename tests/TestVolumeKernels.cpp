@@ -395,20 +395,18 @@ TEST(VolumeKernels, AreTheSameComputedTogether) {
   // Three measurements in two directions.
   const auto measurements = std::vector<Measurement>{
       Traveltime(model, calculation, source, receiver, Along(Vertical), window),
-      Traveltime(model, calculation, source, receiver,
-                 TransverseDirection(source.location, receiver.location,
-                                     figure),
-                 {.start = 700, .end = 1200, .taper = 100}),
+      Traveltime(
+          model, calculation, source, receiver,
+          TransverseDirection(source.location, receiver.location, figure),
+          {.start = 700, .end = 1200, .taper = 100}),
       Traveltime(model, calculation, source, receiver, Along(Vertical),
                  {.start = 900, .end = 1500, .taper = 100})};
   const auto samplings = std::vector<KernelSampling>{
       PathSection(model, source.location, receiver.location,
-                  {.margin = 5, .spacing = 5, .radialSpacing = 1000e3},
-                  figure),
-      PathMaps(
-          model, source.location, receiver.location,
-          {.depths = {200e3}, .margin = 5, .halfWidth = 10, .spacing = 5},
-          figure)};
+                  {.margin = 5, .spacing = 5, .radialSpacing = 1000e3}, figure),
+      PathMaps(model, source.location, receiver.location,
+               {.depths = {200e3}, .margin = 5, .halfWidth = 10, .spacing = 5},
+               figure)};
   const auto together = ComputeSampledKernels(
       model, calculation, source, measurements, ParameterSet::Velocities,
       Scaling::Relative, samplings);
@@ -472,9 +470,8 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   const auto phiR = receiver.longitude * Sphere::Degree;
   const auto delta =
       GeometryAt(thetaR, phiR, thetaS, phiS).distance / Sphere::Degree;
-  const auto path =
-      PathSection(model, source, receiver, {.margin = 10, .spacing = 0.5},
-                  figure);
+  const auto path = PathSection(model, source, receiver,
+                                {.margin = 10, .spacing = 0.5}, figure);
   for (const auto& place : path.places) {
     EXPECT_NEAR(distance(place, thetaS, phiS), std::abs(place.along), 1e-9);
     EXPECT_NEAR(distance(place, thetaR, phiR), std::abs(place.along - delta),
@@ -487,9 +484,8 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   EXPECT_EQ(path.nodes.front().radius, 0);
   EXPECT_EQ(path.nodes.back().layer, model.NumberOfLayers() - 1);
 
-  const auto across =
-      CrossSection(model, source, receiver, {.halfWidth = 20, .spacing = 1},
-                   figure);
+  const auto across = CrossSection(model, source, receiver,
+                                   {.halfWidth = 20, .spacing = 1}, figure);
   for (const auto& place : across.places) {
     // Equally far from source and receiver, at the distance from the
     // middle of the path that a right angle there gives.
@@ -501,8 +497,7 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   }
 
   const auto maps = PathMaps(model, source, receiver,
-                             {.depths = {100e3, 670e3}, .spacing = 2},
-                             figure);
+                             {.depths = {100e3, 670e3}, .spacing = 2}, figure);
   ASSERT_EQ(maps.nodes.size(), 2u);
   // At a discontinuity, the layer above.
   const auto length = model.GetScales().Length();

@@ -15,8 +15,8 @@
  * geocentric on a sphere.
  */
 
-#include <YSpec/Location.hpp>
 #include <YSpec/HydrostaticFigure.hpp>
+#include <YSpec/Location.hpp>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -87,12 +87,11 @@ inline ReceiverGeometry Geometry(const Location& receiver,
     if (latitude == -90) return -89.98;
     return latitude;
   };
-  return GeometryAt(Sphere::Colatitude(
-                        figure.GeocentricLatitude(offPole(receiver.latitude))),
-                    receiver.longitude * Degree,
-                    Sphere::Colatitude(
-                        figure.GeocentricLatitude(offPole(source.latitude))),
-                    source.longitude * Degree);
+  return GeometryAt(
+      Sphere::Colatitude(figure.GeocentricLatitude(offPole(receiver.latitude))),
+      receiver.longitude * Degree,
+      Sphere::Colatitude(figure.GeocentricLatitude(offPole(source.latitude))),
+      source.longitude * Degree);
 }
 
 // Model-less geometry uses the supplied coordinates as geocentric.

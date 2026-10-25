@@ -371,22 +371,22 @@ NB_MODULE(_core, m) {
   nb::class_<HydrostaticFigure::Node>(m, "FigureNode")
       .def_ro("radius", &HydrostaticFigure::Node::radius)
       .def_ro("ellipticity", &HydrostaticFigure::Node::ellipticity)
-      .def_ro("radial_derivative",
-              &HydrostaticFigure::Node::radialDerivative);
+      .def_ro("radial_derivative", &HydrostaticFigure::Node::radialDerivative);
   nb::class_<HydrostaticFigure>(m, "HydrostaticFigure")
       .def_static("spherical", &HydrostaticFigure::Spherical,
                   "rotation_rate"_a = 0.0)
-      .def_static("from_model", &HydrostaticFigure::FromModel,
-                  "model"_a, "rotation_rate"_a = EarthRotationRate,
-                  "tolerance"_a = 1e-9)
+      .def_static("from_model", &HydrostaticFigure::FromModel, "model"_a,
+                  "rotation_rate"_a = EarthRotationRate, "tolerance"_a = 1e-9)
       .def_prop_ro("enabled", &HydrostaticFigure::Enabled)
       .def_prop_ro("rotation_rate", &HydrostaticFigure::RotationRate)
       .def_prop_ro("surface_ellipticity",
                    &HydrostaticFigure::SurfaceEllipticity)
-      .def_prop_ro("nodes", [](const HydrostaticFigure& figure) {
-        const auto nodes = figure.Nodes();
-        return std::vector<HydrostaticFigure::Node>(nodes.begin(), nodes.end());
-      })
+      .def_prop_ro("nodes",
+                   [](const HydrostaticFigure& figure) {
+                     const auto nodes = figure.Nodes();
+                     return std::vector<HydrostaticFigure::Node>(nodes.begin(),
+                                                                 nodes.end());
+                   })
       .def("ellipticity", &HydrostaticFigure::Ellipticity, "radius"_a)
       .def("geocentric_latitude", &HydrostaticFigure::GeocentricLatitude,
            "geographic_latitude"_a)
@@ -512,10 +512,10 @@ NB_MODULE(_core, m) {
         nb::overload_cast<const Location&, const Location&,
                           const HydrostaticFigure&>(&RadialDirection),
         "source"_a, "receiver"_a, "figure"_a);
-  m.def("transverse_direction",
-        nb::overload_cast<const Location&, const Location&>(
-            &TransverseDirection),
-        "source"_a, "receiver"_a);
+  m.def(
+      "transverse_direction",
+      nb::overload_cast<const Location&, const Location&>(&TransverseDirection),
+      "source"_a, "receiver"_a);
   m.def("transverse_direction",
         nb::overload_cast<const Location&, const Location&,
                           const HydrostaticFigure&>(&TransverseDirection),
@@ -683,34 +683,32 @@ NB_MODULE(_core, m) {
   m.def("path_section",
         nb::overload_cast<const Model&, const Location&, const Location&,
                           const SectionOptions&>(&PathSection),
-        "model"_a, "source"_a, "receiver"_a,
-        "options"_a = SectionOptions{});
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{});
   m.def("path_section",
         nb::overload_cast<const Model&, const Location&, const Location&,
                           const SectionOptions&, const HydrostaticFigure&>(
             &PathSection),
-        "model"_a, "source"_a, "receiver"_a,
-        "options"_a = SectionOptions{}, "figure"_a);
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{},
+        "figure"_a);
   m.def("cross_section",
         nb::overload_cast<const Model&, const Location&, const Location&,
                           const SectionOptions&>(&CrossSection),
-        "model"_a, "source"_a, "receiver"_a,
-        "options"_a = SectionOptions{});
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{});
   m.def("cross_section",
         nb::overload_cast<const Model&, const Location&, const Location&,
                           const SectionOptions&, const HydrostaticFigure&>(
             &CrossSection),
-        "model"_a, "source"_a, "receiver"_a,
-        "options"_a = SectionOptions{}, "figure"_a);
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{},
+        "figure"_a);
   m.def("path_maps",
         nb::overload_cast<const Model&, const Location&, const Location&,
                           const MapOptions&>(&PathMaps),
         "model"_a, "source"_a, "receiver"_a, "options"_a);
-  m.def("path_maps",
-        nb::overload_cast<const Model&, const Location&, const Location&,
-                          const MapOptions&, const HydrostaticFigure&>(
-            &PathMaps),
-        "model"_a, "source"_a, "receiver"_a, "options"_a, "figure"_a);
+  m.def(
+      "path_maps",
+      nb::overload_cast<const Model&, const Location&, const Location&,
+                        const MapOptions&, const HydrostaticFigure&>(&PathMaps),
+      "model"_a, "source"_a, "receiver"_a, "options"_a, "figure"_a);
   auto sampled = nb::class_<SampledKernels>(m, "SampledKernels");
   sampled.def_prop_ro("names", &SampledKernels::Names)
       .def_prop_ro(

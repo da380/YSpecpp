@@ -13,11 +13,10 @@ namespace {
 using Sphere::Degree;
 using Sphere::Vector;
 
-Vector UnitVector(const Location& location,
-                  const HydrostaticFigure& figure) {
-  return Sphere::Unit(Sphere::Colatitude(
-                          figure.GeocentricLatitude(location.latitude)),
-                      location.longitude * Degree);
+Vector UnitVector(const Location& location, const HydrostaticFigure& figure) {
+  return Sphere::Unit(
+      Sphere::Colatitude(figure.GeocentricLatitude(location.latitude)),
+      location.longitude * Degree);
 }
 
 Location ToLocation(const Vector& x, const HydrostaticFigure& figure) {
@@ -64,8 +63,7 @@ std::vector<Location> GreatCircle(const Location& from, const Location& to,
     // Spherical linear interpolation.
     const auto t = Fraction(i, count);
     points.push_back(ToLocation(
-        Combine(std::sin((1 - t) * delta), a, std::sin(t * delta), b),
-        figure));
+        Combine(std::sin((1 - t) * delta), a, std::sin(t * delta), b), figure));
   }
   // The ends exactly as given.
   points.front() = from;

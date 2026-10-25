@@ -63,6 +63,18 @@ def test_rotation_keeps_the_horizontal_motion(model, source, calculation):
         seismograms.trace("R", receiver=1),
         wrong.north * seismograms.data[0, 1, 1]
         + wrong.east * seismograms.data[0, 1, 2], rtol=0, atol=1e-14)
+
+
+def test_obspy_rotation_uses_retained_figure(model, source, calculation):
+    pytest.importorskip("obspy")
+
+    receivers = yspec.great_circle(source, azimuth_deg=30,
+                                   distances_deg=[20, 70],
+                                   figure=model.figure(
+                                       calculation.rotation_rate_rad_s,
+                                       calculation.latitude_correction))
+    seismograms = yspec.seismograms(model, calculation, source, receivers)
+    turned = seismograms.rotated()
     stream = seismograms.to_obspy(rotate=True)
     np.testing.assert_allclose(stream[4].data, turned[0, 1, 1])
 

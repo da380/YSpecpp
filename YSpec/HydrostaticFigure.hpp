@@ -16,15 +16,16 @@ struct Calculation;
 /// IERS nominal mean angular velocity of the Earth (rad/s).
 inline constexpr double EarthRotationRate = 7.292115e-5;
 
-/** A sampled, first-order hydrostatic ellipticity profile and its conversion. */
+/** A sampled, first-order hydrostatic ellipticity profile and its conversion.
+ */
 class HydrostaticFigure {
  public:
   /** One radial sample and derivative of the first-order figure profile. */
   struct Node {
     /** Radius of the profile sample (m). */
-    double radius;            ///< Radius (m).
+    double radius;  ///< Radius (m).
     /** First-order ellipticity at this radius. */
-    double ellipticity;       ///< First-order figure ellipticity at the radius.
+    double ellipticity;  ///< First-order figure ellipticity at the radius.
     /** Radial derivative of ellipticity (m^-1). */
     double radialDerivative;  ///< d(ellipticity)/dr (m^-1).
   };

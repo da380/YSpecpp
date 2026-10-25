@@ -214,9 +214,17 @@ Location ReadLocation(const Json& json) {
 }
 
 std::vector<std::string_view> SharedMembers() {
-  return {"model",       "attenuation", "gravity", "degrees", "frequencies_mHz",
-          "time_series", "filter_mHz",  "sources", "solver",
-          "latitude_correction", "rotation_rate_rad_s"};
+  return {"model",
+          "attenuation",
+          "gravity",
+          "degrees",
+          "frequencies_mHz",
+          "time_series",
+          "filter_mHz",
+          "sources",
+          "solver",
+          "latitude_correction",
+          "rotation_rate_rad_s"};
 }
 
 Shared ReadShared(const Json& json, const std::filesystem::path& directory) {
@@ -302,9 +310,9 @@ std::optional<Instrument> ReadInstrument(
   }
 }
 
-std::vector<Receiver> ReadReceiverGroup(
-    const Json& group, const std::filesystem::path& directory,
-    const HydrostaticFigure& figure) {
+std::vector<Receiver> ReadReceiverGroup(const Json& group,
+                                        const std::filesystem::path& directory,
+                                        const HydrostaticFigure& figure) {
   Allow(group, {"depth_km", "locations", "profile", "instrument"});
   const auto depths = Depths(group.At("depth_km"));
   const auto* list = group.Find("locations");

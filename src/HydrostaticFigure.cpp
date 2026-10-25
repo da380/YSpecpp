@@ -1,6 +1,5 @@
-#include <YSpec/HydrostaticFigure.hpp>
 #include <YSpec/Calculation.hpp>
-
+#include <YSpec/HydrostaticFigure.hpp>
 #include <YSpec/Model.hpp>
 #include <YSpec/Units.hpp>
 #include <algorithm>
@@ -16,7 +15,8 @@ namespace YSpec {
 
 HydrostaticFigure HydrostaticFigure::Spherical(double rotationRate) {
   if (!(rotationRate >= 0) || !std::isfinite(rotationRate)) {
-    throw std::invalid_argument("rotation rate must be finite and non-negative");
+    throw std::invalid_argument(
+        "rotation rate must be finite and non-negative");
   }
   HydrostaticFigure figure;
   figure.rotationRate_ = rotationRate;
@@ -25,13 +25,15 @@ HydrostaticFigure HydrostaticFigure::Spherical(double rotationRate) {
 }
 
 HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
-                                                double rotationRate,
-                                                double tolerance) {
+                                               double rotationRate,
+                                               double tolerance) {
   if (!(rotationRate >= 0) || !std::isfinite(rotationRate)) {
-    throw std::invalid_argument("rotation rate must be finite and non-negative");
+    throw std::invalid_argument(
+        "rotation rate must be finite and non-negative");
   }
   if (!(tolerance > 0 && tolerance < 1) || !std::isfinite(tolerance)) {
-    throw std::invalid_argument("figure tolerance must lie between zero and one");
+    throw std::invalid_argument(
+        "figure tolerance must lie between zero and one");
   }
   if (std::abs(model.InnerRadius()) > 1e-12 * model.SurfaceRadius()) {
     throw std::invalid_argument(
@@ -39,7 +41,8 @@ HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
   }
   const auto& scales = model.GetScales();
   const auto radius = model.SurfaceRadius();
-  if (!(radius > 0)) throw std::invalid_argument("model surface radius must be positive");
+  if (!(radius > 0))
+    throw std::invalid_argument("model surface radius must be positive");
 
   HydrostaticFigure figure;
   figure.enabled_ = true;
@@ -48,7 +51,8 @@ HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
   const auto surfaceGravity = surfaceMaterial.g * scales.Acceleration();
   const auto surfaceRadius = radius * scales.Length();
   if (!(surfaceGravity > 0) || !std::isfinite(surfaceGravity)) {
-    throw std::invalid_argument("hydrostatic figure requires positive surface gravity");
+    throw std::invalid_argument(
+        "hydrostatic figure requires positive surface gravity");
   }
   const auto m = rotationRate * rotationRate * surfaceRadius / surfaceGravity;
   if (!(m < 0.1)) {
@@ -76,14 +80,12 @@ HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
     }
     const auto rSI = r * scales.Length();
     const auto mean =
-        3 * gravity /
-        (4 * std::numbers::pi * GravitationalConstant * rSI);
+        3 * gravity / (4 * std::numbers::pi * GravitationalConstant * rSI);
     return rho / mean;
   };
   auto derivative = [&](Int layer, double x, const Vector<2>& y) {
     const auto q = ratio(layer, x);
-    return Vector<2>{y[1], -6 * q / x * y[1] -
-                               6 * (q - 1) / (x * x) * y[0]};
+    return Vector<2>{y[1], -6 * q / x * y[1] - 6 * (q - 1) / (x * x) * y[0]};
   };
   const auto integrator = RungeKutta<DormandPrince54>(
       IntegrationOptions{.adaptive = true, .tolerance = tolerance});
@@ -91,7 +93,8 @@ HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
   auto x = start;
   const auto first = model(Int{0}, x * radius);
   if (!(first.rho > 0)) {
-    throw std::invalid_argument("hydrostatic figure requires positive central density");
+    throw std::invalid_argument(
+        "hydrostatic figure requires positive central density");
   }
   for (auto layer : std::views::iota(Int{0}, model.NumberOfLayers())) {
     const auto& material = model.GetLayer(layer);
@@ -99,14 +102,15 @@ HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
       auto end = knot / radius;
       if (end <= x) continue;
       integrator.Integrate(
-          [&](double at, const Vector<2>& y) { return derivative(layer, at, y); },
+          [&](double at, const Vector<2>& y) {
+            return derivative(layer, at, y);
+          },
           x, end, state, step);
       x = end;
       const auto value = Rescale(state.value[0], state.logScale).real();
       const auto derivativeValue =
           Rescale(state.value[1], state.logScale).real() / surfaceRadius;
-      const auto node =
-          Node{knot * scales.Length(), value, derivativeValue};
+      const auto node = Node{knot * scales.Length(), value, derivativeValue};
       if (figure.nodes_.back().radius == node.radius) {
         figure.nodes_.back() = node;
       } else {
@@ -136,18 +140,19 @@ HydrostaticFigure HydrostaticFigure::FromModel(const Model& model,
     figure.nodes_.back().ellipticity = figure.surfaceEllipticity_;
     figure.nodes_.back().radialDerivative = normalization * de / surfaceRadius;
   } else {
-    figure.nodes_.push_back(
-        {surfaceRadius, figure.surfaceEllipticity_, normalization * de / surfaceRadius});
+    figure.nodes_.push_back({surfaceRadius, figure.surfaceEllipticity_,
+                             normalization * de / surfaceRadius});
   }
   if (!(1 - 2 * figure.surfaceEllipticity_ > 0)) {
     throw std::invalid_argument(
-        "first-order hydrostatic figure exceeds its positive latitude-map range");
+        "first-order hydrostatic figure exceeds its positive latitude-map "
+        "range");
   }
   return figure;
 }
 
 double HydrostaticFigure::GeocentricLatitude(double geographicLatitude) const {
-  if (!enabled_) return geographicLatitude;
+  if (!enabled_ || surfaceEllipticity_ == 0) return geographicLatitude;
   const auto ratio = 1 - 2 * surfaceEllipticity_;
   const auto angle = geographicLatitude * std::numbers::pi / 180;
   return std::atan2(ratio * std::sin(angle), std::cos(angle)) * 180 /
@@ -155,7 +160,7 @@ double HydrostaticFigure::GeocentricLatitude(double geographicLatitude) const {
 }
 
 double HydrostaticFigure::GeographicLatitude(double geocentricLatitude) const {
-  if (!enabled_) return geocentricLatitude;
+  if (!enabled_ || surfaceEllipticity_ == 0) return geocentricLatitude;
   const auto ratio = 1 - 2 * surfaceEllipticity_;
   const auto angle = geocentricLatitude * std::numbers::pi / 180;
   return std::atan2(std::sin(angle), ratio * std::cos(angle)) * 180 /
@@ -169,7 +174,8 @@ double HydrostaticFigure::Ellipticity(double radius) const {
   if (!enabled_ || nodes_.empty()) return 0;
   if (radius <= nodes_.front().radius) return nodes_.front().ellipticity;
   if (radius >= nodes_.back().radius) return nodes_.back().ellipticity;
-  const auto upper = std::ranges::lower_bound(nodes_, radius, {}, &Node::radius);
+  const auto upper =
+      std::ranges::lower_bound(nodes_, radius, {}, &Node::radius);
   const auto& b = *upper;
   const auto& a = *(upper - 1);
   const auto width = b.radius - a.radius;

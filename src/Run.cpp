@@ -52,15 +52,15 @@ void WriteReceivers(const SeismogramInput& input, std::size_t sources,
       "# file source latitude longitude depth_km distance_deg azimuth_deg "
       "back_azimuth_deg | latitude_correction {} rotation_rate_rad_s "
       "{:.12E} surface_ellipticity {:.12E} method {}\n",
-                      figure.Enabled() ? "true" : "false",
-                      figure.RotationRate(), figure.SurfaceEllipticity(),
-                      figure.Enabled() ? "first_order_clairaut" : "spherical");
+      figure.Enabled() ? "true" : "false", figure.RotationRate(),
+      figure.SurfaceEllipticity(),
+      figure.Enabled() ? "first_order_clairaut" : "spherical");
   for (auto source = std::size_t{0}; source < sources; ++source) {
     for (auto receiver = std::size_t{0}; receiver < input.receivers.size();
          ++receiver) {
       const auto& at = input.receivers[receiver];
-      const auto view = Geometry(at.location, input.sources[source].location,
-                                 figure);
+      const auto view =
+          Geometry(at.location, input.sources[source].location, figure);
       const auto degree = std::numbers::pi / 180;
       file << std::format(
           "{} {} {:10.4f}{:10.4f}{:10.3f}{:10.4f}{:10.4f}{:10.4f}\n",
@@ -148,13 +148,14 @@ void WriteSnapshots(const Snapshots& snapshots, const SnapshotInput& input) {
                   : std::format(".{}.{}", input.names.at(source), time + 1);
       auto file = std::ofstream(path);
       if (!file) throw std::runtime_error("cannot write " + path.string());
-      file << std::format("# source {}, {} s after the origin, {} | "
-                          "latitude_correction {} rotation_rate_rad_s "
-                          "{:.12E} surface_ellipticity {:.12E} method {}\n",
-                          input.names.at(source), snapshots.Times()[time],
-                          quantity, figure.Enabled() ? "true" : "false",
-                          figure.RotationRate(), figure.SurfaceEllipticity(),
-                          figure.Enabled() ? "first_order_clairaut" : "spherical");
+      file << std::format(
+          "# source {}, {} s after the origin, {} | "
+          "latitude_correction {} rotation_rate_rad_s "
+          "{:.12E} surface_ellipticity {:.12E} method {}\n",
+          input.names.at(source), snapshots.Times()[time], quantity,
+          figure.Enabled() ? "true" : "false", figure.RotationRate(),
+          figure.SurfaceEllipticity(),
+          figure.Enabled() ? "first_order_clairaut" : "spherical");
       file << "# depth_km distance_deg azimuth_deg latitude longitude up away "
               "transverse\n";
       for (auto depth = std::size_t{0}; depth < grid.depths.size(); ++depth) {
@@ -361,9 +362,9 @@ void WriteVolumeKernels(const SampledKernels& kernels, const KernelInput& input,
                std::string(figure.Enabled() ? "true" : "false"));
   file.SetMeta("rotation_rate_rad_s", figure.RotationRate());
   file.SetMeta("surface_ellipticity", figure.SurfaceEllipticity());
-  file.SetMeta("coordinate_method",
-               std::string(figure.Enabled() ? "first_order_clairaut"
-                                            : "spherical"));
+  file.SetMeta(
+      "coordinate_method",
+      std::string(figure.Enabled() ? "first_order_clairaut" : "spherical"));
   file.SetMeta("source_latitude", input.source.location.latitude);
   file.SetMeta("source_longitude", input.source.location.longitude);
   file.SetMeta("source_depth", input.source.depth);
@@ -509,11 +510,12 @@ void WriteKernels(const KernelResult& result, const KernelInput& input) {
       file << "# at_source";
       for (auto value : named.atSource) file << std::format(" {:.6E}", value);
       file << "\n";
-      file << std::format("# latitude_correction {} rotation_rate_rad_s {:.12E} "
-                          "surface_ellipticity {:.12E} method {}\n",
-                          figure.Enabled() ? "true" : "false",
-                          figure.RotationRate(), figure.SurfaceEllipticity(),
-                          figure.Enabled() ? "first_order_clairaut" : "spherical");
+      file << std::format(
+          "# latitude_correction {} rotation_rate_rad_s {:.12E} "
+          "surface_ellipticity {:.12E} method {}\n",
+          figure.Enabled() ? "true" : "false", figure.RotationRate(),
+          figure.SurfaceEllipticity(),
+          figure.Enabled() ? "first_order_clairaut" : "spherical");
       file << "# radius_km depth_km weight_m3";
       for (const auto& name : named.names) file << " " << name;
       file << "\n";

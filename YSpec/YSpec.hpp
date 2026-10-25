@@ -6,9 +6,9 @@
  */
 
 #include "Calculation.hpp"
+#include "HydrostaticFigure.hpp"
 #include "Input.hpp"
 #include "Instrument.hpp"
-#include "HydrostaticFigure.hpp"
 #include "Kernels.hpp"
 #include "Location.hpp"
 #include "Model.hpp"

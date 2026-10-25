@@ -56,8 +56,8 @@ class Views {
     auto distances = std::vector<double>{};
     for (const auto& source : sources) {
       for (const auto& place : places) {
-        auto view =
-          View{.geometry = Geometry(place, source.location, figure), .phase = {}};
+        auto view = View{.geometry = Geometry(place, source.location, figure),
+                         .phase = {}};
         for (auto m : OrderArray<Complex>::Orders(2)) {
           view.phase[m] = std::exp(1i * (m * view.geometry.phi));
         }

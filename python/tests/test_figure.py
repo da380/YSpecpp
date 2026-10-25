@@ -26,6 +26,9 @@ def test_disabled_and_zero_spin_figures_are_identity(model):
     for figure in (sphere, zero_spin):
         assert figure.geocentric_latitude(45) == 45
         assert figure.geographic_latitude(-90) == -90
+    for latitude in (-90, -45, 13.37, 45, 90):
+        assert zero_spin.geocentric_latitude(latitude) == latitude
+        assert zero_spin.geographic_latitude(latitude) == latitude
     assert earth.geocentric_latitude(45) != 45
     assert np.isclose(earth.geographic_latitude(
         earth.geocentric_latitude(45)), 45, atol=2e-14)

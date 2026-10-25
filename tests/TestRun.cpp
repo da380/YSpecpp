@@ -107,12 +107,11 @@ TEST(Run, WritesASeismogramFilePerSourceAndReceiver) {
       const auto model = Model::ReadDeck(directory / "prem.200");
       const auto figure = HydrostaticFigure::FromModel(model);
       const auto latitude = figure.GeocentricLatitude(20);
-      EXPECT_NEAR(
-          values[3],
-          std::acos(std::cos(latitude * std::numbers::pi / 180) *
-                    std::cos(30 * std::numbers::pi / 180)) *
-              180 / std::numbers::pi,
-          1e-3);
+      EXPECT_NEAR(values[3],
+                  std::acos(std::cos(latitude * std::numbers::pi / 180) *
+                            std::cos(30 * std::numbers::pi / 180)) *
+                      180 / std::numbers::pi,
+                  1e-3);
     }
     ++rows;
   }
@@ -199,7 +198,8 @@ TEST(Run, WritesASnapshotFilePerTime) {
   // At the epicentre the location is the source's.
   auto file = std::ifstream(directory / "snap.1");
   auto line = std::string{};
-  while (std::getline(file, line) && line.starts_with('#')) {}
+  while (std::getline(file, line) && line.starts_with('#')) {
+  }
   auto row = std::array<double, 8>{};
   auto input = std::istringstream(line);
   for (auto i = std::size_t{0}; i < 5; ++i) input >> row[i];
@@ -309,7 +309,8 @@ TEST(Run, WritesKernelsAndTheirMeasurement) {
     EXPECT_EQ(count(".maps"), size(*kernels.maps));
 
     auto lastHeader = [&](const std::string& suffix) {
-      auto file = std::ifstream(directory / ("out." + std::string(name) + suffix));
+      auto file =
+          std::ifstream(directory / ("out." + std::string(name) + suffix));
       auto last = std::string{};
       for (auto line = std::string{}; std::getline(file, line);) {
         if (line.starts_with('#')) last = line;
@@ -322,11 +323,11 @@ TEST(Run, WritesKernelsAndTheirMeasurement) {
     if (name == std::string("Z") && WritesModelFiles()) {
       ASSERT_TRUE(kernels.volume);
       const auto input = ReadKernelInput(directory / "input.json");
-      using LegacyVolumeWriter = void (*)(
-          const SampledKernels&, const KernelInput&,
-          const KernelMeasurement&, const fs::path&);
-      const auto legacyWriter = static_cast<LegacyVolumeWriter>(
-          &WriteVolumeKernels);
+      using LegacyVolumeWriter =
+          void (*)(const SampledKernels&, const KernelInput&,
+                   const KernelMeasurement&, const fs::path&);
+      const auto legacyWriter =
+          static_cast<LegacyVolumeWriter>(&WriteVolumeKernels);
       const auto compatibilityPath = directory / "compatibility.nc";
       legacyWriter(*kernels.volume, input, input.measurements.front(),
                    compatibilityPath);

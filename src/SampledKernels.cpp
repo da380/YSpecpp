@@ -198,9 +198,9 @@ std::vector<KernelNode> NodesThrough(const Model& model, double spacing) {
 using Vector = Sphere::Vector;
 
 Vector Unit(const Location& location, const HydrostaticFigure& figure) {
-  return Sphere::Unit(Sphere::Colatitude(
-                          figure.GeocentricLatitude(location.latitude)),
-                      location.longitude * Sphere::Degree);
+  return Sphere::Unit(
+      Sphere::Colatitude(figure.GeocentricLatitude(location.latitude)),
+      location.longitude * Sphere::Degree);
 }
 
 double Dot(const Vector& a, const Vector& b) {
@@ -438,11 +438,11 @@ std::vector<std::vector<SampledKernels>> ComputeSampledKernels(
   using Sphere::Degree;
   const auto figure = FigureFor(model, calculation);
   const auto& receiver = measurements.front().receiver;
-  const auto thetaS = Sphere::Colatitude(
-      figure.GeocentricLatitude(source.location.latitude));
+  const auto thetaS =
+      Sphere::Colatitude(figure.GeocentricLatitude(source.location.latitude));
   const auto phiS = source.location.longitude * Degree;
-  const auto thetaR = Sphere::Colatitude(
-      figure.GeocentricLatitude(receiver.location.latitude));
+  const auto thetaR =
+      Sphere::Colatitude(figure.GeocentricLatitude(receiver.location.latitude));
   const auto phiR = receiver.location.longitude * Degree;
   constexpr auto blockSize = std::size_t{64};
   auto blocks = std::vector<Block>{};

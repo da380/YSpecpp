@@ -3,7 +3,6 @@
 #include <YSpec/HydrostaticFigure.hpp>
 #include <YSpec/Kernels.hpp>
 #include <YSpec/Model.hpp>
-
 #include <algorithm>
 #include <limits>
 #include <numbers>
@@ -54,8 +53,8 @@ TEST(HydrostaticFigure, PremSurfaceMatchesIndependentClairautReference) {
 TEST(HydrostaticFigure, ProfileAndDerivativeAreContinuousAtLayerInterfaces) {
   const auto model = Model::ReadDeck(kPrem);
   const auto figure = HydrostaticFigure::FromModel(model);
-  const auto fine = HydrostaticFigure::FromModel(model, EarthRotationRate,
-                                                 1e-11);
+  const auto fine =
+      HydrostaticFigure::FromModel(model, EarthRotationRate, 1e-11);
   EXPECT_NEAR(fine.SurfaceEllipticity(), figure.SurfaceEllipticity(), 2e-11);
   const auto length = model.GetScales().Length();
   for (auto layer = Int{0}; layer + 1 < model.NumberOfLayers(); ++layer) {
@@ -64,12 +63,12 @@ TEST(HydrostaticFigure, ProfileAndDerivativeAreContinuousAtLayerInterfaces) {
                                         &HydrostaticFigure::Node::radius);
     ASSERT_NE(node, figure.Nodes().end());
     constexpr auto h = 10.0;
-    const auto left = (figure.Ellipticity(radius) -
-                       figure.Ellipticity(radius - h)) / h;
-    const auto right = (figure.Ellipticity(radius + h) -
-                        figure.Ellipticity(radius)) / h;
-    EXPECT_NEAR(left, right, 1e-9 * std::max(std::abs(left),
-                                            std::abs(right)) + 1e-14);
+    const auto left =
+        (figure.Ellipticity(radius) - figure.Ellipticity(radius - h)) / h;
+    const auto right =
+        (figure.Ellipticity(radius + h) - figure.Ellipticity(radius)) / h;
+    EXPECT_NEAR(left, right,
+                1e-9 * std::max(std::abs(left), std::abs(right)) + 1e-14);
     EXPECT_NEAR(node->ellipticity, fine.Ellipticity(radius), 2e-10);
   }
 }
@@ -81,9 +80,15 @@ TEST(HydrostaticFigure, RotationScalingAndSphericalIdentity) {
   EXPECT_NEAR(half.SurfaceEllipticity() / earth.SurfaceEllipticity(), 0.25,
               1e-12);
   const auto sphere = HydrostaticFigure::Spherical();
+  const auto zeroSpin = HydrostaticFigure::FromModel(model, 0);
   EXPECT_FALSE(sphere.Enabled());
+  EXPECT_TRUE(zeroSpin.Enabled());
   EXPECT_DOUBLE_EQ(sphere.GeocentricLatitude(45), 45);
   EXPECT_DOUBLE_EQ(sphere.GeographicLatitude(-90), -90);
+  for (const auto latitude : {-90.0, -45.0, 13.37, 45.0, 90.0}) {
+    EXPECT_DOUBLE_EQ(zeroSpin.GeocentricLatitude(latitude), latitude);
+    EXPECT_DOUBLE_EQ(zeroSpin.GeographicLatitude(latitude), latitude);
+  }
   EXPECT_DOUBLE_EQ(sphere.Ellipticity(3e6), 0);
   EXPECT_THROW(sphere.Ellipticity(std::numeric_limits<double>::quiet_NaN()),
                std::invalid_argument);
@@ -92,8 +97,7 @@ TEST(HydrostaticFigure, RotationScalingAndSphericalIdentity) {
 TEST(HydrostaticFigure, SurfaceConversionsAreInverseAndPoleSafe) {
   const auto figure = HydrostaticFigure::FromModel(Model::ReadDeck(kPrem));
   for (auto latitude : {-90.0, -80.0, -13.82, 0.0, 45.0, 90.0}) {
-    EXPECT_NEAR(figure.GeographicLatitude(
-                    figure.GeocentricLatitude(latitude)),
+    EXPECT_NEAR(figure.GeographicLatitude(figure.GeocentricLatitude(latitude)),
                 latitude, 2e-14);
   }
   EXPECT_DOUBLE_EQ(figure.GeocentricLatitude(90), 90);
@@ -103,13 +107,11 @@ TEST(HydrostaticFigure, SurfaceConversionsAreInverseAndPoleSafe) {
 TEST(HydrostaticFigure, ModelAwareSamplingDefaultsToTheModelFigure) {
   const auto model = Model::ReadDeck(kPrem);
   const auto figure = HydrostaticFigure::FromModel(model);
-  const SectionOptions options{.margin = 1,
-                               .halfWidth = 1,
-                               .spacing = 1,
-                               .radialSpacing = 1e6};
+  const SectionOptions options{
+      .margin = 1, .halfWidth = 1, .spacing = 1, .radialSpacing = 1e6};
   const auto implicit = PathSection(model, {-13.82, -67.25}, {80, 0}, options);
-  const auto explicitFigure = PathSection(model, {-13.82, -67.25}, {80, 0},
-                                          options, figure);
+  const auto explicitFigure =
+      PathSection(model, {-13.82, -67.25}, {80, 0}, options, figure);
   ASSERT_EQ(implicit.places.size(), explicitFigure.places.size());
   for (auto i = std::size_t{0}; i < implicit.places.size(); ++i) {
     EXPECT_DOUBLE_EQ(implicit.places[i].colatitude,

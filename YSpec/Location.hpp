@@ -17,9 +17,12 @@
 
 namespace YSpec {
 
-/** @brief A point on the surface. Latitude and longitude are in degrees; latitude is geographic when a computed figure is supplied and geocentric for model-less spherical helpers. */
+/** @brief A point on the surface. Latitude and longitude are in degrees;
+ * latitude is geographic when a computed figure is supplied and geocentric for
+ * model-less spherical helpers. */
 struct Location {
-  double latitude = 0;   ///< Degrees north: geographic with a figure, otherwise geocentric.
+  double latitude =
+      0;  ///< Degrees north: geographic with a figure, otherwise geocentric.
   double longitude = 0;  ///< Longitude, degrees east.
 };
 
@@ -34,7 +37,8 @@ struct Location {
  */
 std::vector<Location> GreatCircle(const Location& from, const Location& to,
                                   std::size_t count);
-/** Great circle between geographic locations using the supplied model figure. */
+/** Great circle between geographic locations using the supplied model figure.
+ */
 std::vector<Location> GreatCircle(const Location& from, const Location& to,
                                   std::size_t count,
                                   const HydrostaticFigure& figure);

@@ -15,9 +15,17 @@ namespace {
 using namespace YSpec;
 namespace fs = std::filesystem;
 
-constexpr Calculation kLegacyAggregateCalculation{
-    Gravity::Cowling, false, Quantity::Displacement, false, {}, {}, {},
-    std::nullopt, {}, true, EarthRotationRate};
+constexpr Calculation kLegacyAggregateCalculation{Gravity::Cowling,
+                                                  false,
+                                                  Quantity::Displacement,
+                                                  false,
+                                                  {},
+                                                  {},
+                                                  {},
+                                                  std::nullopt,
+                                                  {},
+                                                  true,
+                                                  EarthRotationRate};
 static_assert(kLegacyAggregateCalculation.gravity == Gravity::Cowling);
 static_assert(!kLegacyAggregateCalculation.attenuation);
 static_assert(Calculation{}.latitudeCorrection);
@@ -108,8 +116,8 @@ TEST(Input, AppliesTheDefaults) {
 }
 
 TEST(Input, ReadsFigureSettingsAndAllowsGeocentricCoordinates) {
-  const auto text = Document(
-      R"( "latitude_correction": false, "rotation_rate_rad_s": 0,)" );
+  const auto text =
+      Document(R"( "latitude_correction": false, "rotation_rate_rad_s": 0,)");
   const auto input = ReadSeismogramInput(Write("spherical.json", text));
   EXPECT_FALSE(input.calculation.latitudeCorrection);
   EXPECT_DOUBLE_EQ(input.calculation.rotationRate, 0);

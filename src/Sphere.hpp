@@ -17,9 +17,7 @@ inline double Colatitude(double geocentricLatitude) {
 }
 
 // Convert colatitude in radians to geocentric latitude in degrees.
-inline double Latitude(double colatitude) {
-  return 90 - colatitude / Degree;
-}
+inline double Latitude(double colatitude) { return 90 - colatitude / Degree; }
 
 using Vector = std::array<double, 3>;
 

@@ -382,7 +382,8 @@ struct SectionOptions {
 KernelSampling PathSection(const Model& model, const Location& source,
                            const Location& receiver,
                            const SectionOptions& options = {});
-/** Uses the model-derived default rotation figure; pass @p figure to override. */
+/** Uses the model-derived default rotation figure; pass @p figure to override.
+ */
 KernelSampling PathSection(const Model& model, const Location& source,
                            const Location& receiver,
                            const SectionOptions& options,
@@ -396,7 +397,8 @@ KernelSampling PathSection(const Model& model, const Location& source,
 KernelSampling CrossSection(const Model& model, const Location& source,
                             const Location& receiver,
                             const SectionOptions& options = {});
-/** Uses the model-derived default rotation figure; pass @p figure to override. */
+/** Uses the model-derived default rotation figure; pass @p figure to override.
+ */
 KernelSampling CrossSection(const Model& model, const Location& source,
                             const Location& receiver,
                             const SectionOptions& options,
@@ -417,7 +419,8 @@ struct MapOptions {
  */
 KernelSampling PathMaps(const Model& model, const Location& source,
                         const Location& receiver, const MapOptions& options);
-/** Uses the model-derived default rotation figure; pass @p figure to override. */
+/** Uses the model-derived default rotation figure; pass @p figure to override.
+ */
 KernelSampling PathMaps(const Model& model, const Location& source,
                         const Location& receiver, const MapOptions& options,
                         const HydrostaticFigure& figure);

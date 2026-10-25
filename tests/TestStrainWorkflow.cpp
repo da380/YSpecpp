@@ -63,7 +63,7 @@ TEST(Strain, IsTheGradientOfTheDisplacement) {
   const auto h = 1e-4;    // radians
   const auto dr = 500.0;  // m
   auto at = [&](double dLatitude, double dLongitude, double dDepth) {
-      return Receiver{{Geographic(latitude + dLatitude / kDegree, figure),
+    return Receiver{{Geographic(latitude + dLatitude / kDegree, figure),
                      longitude + dLongitude / kDegree},
                     depth + dDepth};
   };
