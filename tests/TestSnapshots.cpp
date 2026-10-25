@@ -32,6 +32,7 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
   const auto model = Model::ReadDeck(kPrem);
   auto calculation = Small();
   calculation.quantity = Quantity::Velocity;
+  const auto figure = FigureFor(model, calculation);
   const auto sources = std::vector<Source>{
       {{10, 20}, 30e3, {.rr = 1e18, .rt = 2e18, .tp = -1e18}},
       {{-30, 100}, 200e3, {.rp = 1e18, .tt = 1e18, .pp = -1e18}}};
@@ -53,8 +54,8 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
     for (auto depth : grid.depths) {
       for (auto azimuth : grid.azimuths) {
         for (auto distance : grid.distances) {
-          const auto place =
-              GreatCircle(source.location, azimuth, distance, distance, 1);
+          const auto place = GreatCircle(source.location, azimuth, distance,
+                                         distance, 1, figure);
           receivers.push_back({place[0], depth});
         }
       }
@@ -81,11 +82,11 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
       for (auto a : {0, 1}) {
         for (auto i : {0, 1, 2, 3}) {
           // The azimuth of the direction away from the source at the point.
-          const auto beta =
-              grid.distances[i] == 0
-                  ? grid.azimuths[a] * pi / 180
-                  : pi - Geometry(receivers[k].location, source.location)
-                             .rotation;
+          const auto beta = grid.distances[i] == 0
+                                ? grid.azimuths[a] * pi / 180
+                                : pi - Geometry(receivers[k].location,
+                                                source.location, figure)
+                                           .rotation;
           for (auto t : {0, 1, 2}) {
             const auto n = samples[t];
             const auto away = snapshots(s, t, d, i, a, Away);

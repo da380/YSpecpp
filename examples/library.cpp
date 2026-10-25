@@ -17,8 +17,11 @@ int main() {
   const auto sources = std::vector<YSpec::Source>{
       {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e18}}};
   // At 3 km depth: the sea floor of this model.
-  const auto receivers = std::vector<YSpec::Receiver>{
-      {.location = {0, 30}, .depth = 3e3}, {.location = {0, 60}, .depth = 3e3}};
+  const auto figure = YSpec::FigureFor(model, calculation);
+  const auto locations = YSpec::GreatCircle({0, 0}, 90, 30, 60, 2, figure);
+  auto receivers = std::vector<YSpec::Receiver>{};
+  for (const auto& location : locations)
+    receivers.push_back({.location = location, .depth = 3e3});
 
   const auto seismograms =
       YSpec::ComputeSeismograms(model, calculation, sources, receivers);

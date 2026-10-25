@@ -23,6 +23,9 @@ using KernelTest::TheSource;
 // is slow.
 Calculation Tiny() {
   auto c = Calculation{};
+  // Radial-kernel finite differences perturb density while holding the
+  // spherical coordinate setup fixed; the figure itself is not a kernel.
+  c.latitudeCorrection = false;
   c.degrees = {0, 8};
   c.band = {0.5e-3, 2.5e-3};
   c.sampling = {1200, 60};

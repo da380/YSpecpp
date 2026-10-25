@@ -42,18 +42,25 @@ std::filesystem::path SeismogramPath(const SeismogramInput& input,
 
 // A table of the seismogram files, one line for each source and receiver:
 // where the receiver is, and where it is seen from the source.
-void WriteReceivers(const SeismogramInput& input, std::size_t sources) {
+void WriteReceivers(const SeismogramInput& input, std::size_t sources,
+                    const HydrostaticFigure& figure) {
   auto path = input.prefix;
   path += ".receivers";
   auto file = std::ofstream(path);
   if (!file) throw std::runtime_error("cannot write " + path.string());
-  file << "# file source latitude longitude depth_km distance_deg "
-          "azimuth_deg back_azimuth_deg\n";
+  file << std::format(
+      "# file source latitude longitude depth_km distance_deg azimuth_deg "
+      "back_azimuth_deg | latitude_correction {} rotation_rate_rad_s "
+      "{:.12E} surface_ellipticity {:.12E} method {}\n",
+      figure.Enabled() ? "true" : "false", figure.RotationRate(),
+      figure.SurfaceEllipticity(),
+      figure.Enabled() ? "first_order_clairaut" : "spherical");
   for (auto source = std::size_t{0}; source < sources; ++source) {
     for (auto receiver = std::size_t{0}; receiver < input.receivers.size();
          ++receiver) {
       const auto& at = input.receivers[receiver];
-      const auto view = Geometry(at.location, input.sources[source].location);
+      const auto view =
+          Geometry(at.location, input.sources[source].location, figure);
       const auto degree = std::numbers::pi / 180;
       file << std::format(
           "{} {} {:10.4f}{:10.4f}{:10.3f}{:10.4f}{:10.4f}{:10.4f}\n",
@@ -71,7 +78,9 @@ void WriteReceivers(const SeismogramInput& input, std::size_t sources) {
 
 void WriteSeismograms(const Seismograms& seismograms,
                       const SeismogramInput& input) {
-  WriteReceivers(input, seismograms.Sources());
+  const auto model = Model::ReadDeck(input.model);
+  const auto figure = FigureFor(model, input.calculation);
+  WriteReceivers(input, seismograms.Sources(), figure);
   for (auto source = std::size_t{0}; source < seismograms.Sources(); ++source) {
     for (auto receiver = std::size_t{0}; receiver < seismograms.Receivers();
          ++receiver) {
@@ -108,6 +117,8 @@ Snapshots ComputeSnapshots(const SnapshotInput& input,
 }
 
 void WriteSnapshots(const Snapshots& snapshots, const SnapshotInput& input) {
+  const auto model = Model::ReadDeck(input.model);
+  const auto figure = FigureFor(model, input.calculation);
   const auto& grid = snapshots.Grid();
   const auto quantity = [&] {
     switch (input.calculation.quantity) {
@@ -126,7 +137,7 @@ void WriteSnapshots(const Snapshots& snapshots, const SnapshotInput& input) {
     for (auto azimuth : grid.azimuths) {
       for (auto distance : grid.distances) {
         places.push_back(GreatCircle(input.sources[source].location, azimuth,
-                                     distance, distance, 1)
+                                     distance, distance, 1, figure)
                              .front());
       }
     }
@@ -137,9 +148,14 @@ void WriteSnapshots(const Snapshots& snapshots, const SnapshotInput& input) {
                   : std::format(".{}.{}", input.names.at(source), time + 1);
       auto file = std::ofstream(path);
       if (!file) throw std::runtime_error("cannot write " + path.string());
-      file << std::format("# source {}, {} s after the origin, {}\n",
-                          input.names.at(source), snapshots.Times()[time],
-                          quantity);
+      file << std::format(
+          "# source {}, {} s after the origin, {} | "
+          "latitude_correction {} rotation_rate_rad_s "
+          "{:.12E} surface_ellipticity {:.12E} method {}\n",
+          input.names.at(source), snapshots.Times()[time], quantity,
+          figure.Enabled() ? "true" : "false", figure.RotationRate(),
+          figure.SurfaceEllipticity(),
+          figure.Enabled() ? "first_order_clairaut" : "spherical");
       file << "# depth_km distance_deg azimuth_deg latitude longitude up away "
               "transverse\n";
       for (auto depth = std::size_t{0}; depth < grid.depths.size(); ++depth) {
@@ -177,6 +193,7 @@ KernelResult ComputeKernels(const KernelInput& input,
   };
   const auto model = Model::ReadDeck(input.model);
   const auto& calculation = input.calculation;
+  const auto figure = FigureFor(model, calculation);
   auto result =
       KernelResult{.seismogram = ComputeSeismograms(
                        model, calculation, std::span{&input.source, 1},
@@ -200,10 +217,12 @@ KernelResult ComputeKernels(const KernelInput& input,
   const auto& to = input.receiver.location;
   if (input.volume) samplings.push_back(VolumeSampling(model, *input.volume));
   if (input.sections) {
-    samplings.push_back(PathSection(model, from, to, *input.sections));
-    samplings.push_back(CrossSection(model, from, to, *input.sections));
+    samplings.push_back(PathSection(model, from, to, *input.sections, figure));
+    samplings.push_back(CrossSection(model, from, to, *input.sections, figure));
   }
-  if (input.maps) samplings.push_back(PathMaps(model, from, to, *input.maps));
+  if (input.maps) {
+    samplings.push_back(PathMaps(model, from, to, *input.maps, figure));
+  }
   auto sampled = std::vector<std::vector<SampledKernels>>(measurements.size());
   if (!samplings.empty()) {
     sampled = ComputeSampledKernels(
@@ -284,9 +303,26 @@ void WriteVolumeKernels(const SampledKernels& kernels, const KernelInput& input,
                         const KernelMeasurement& measurement,
                         const std::filesystem::path& path) {
 #ifndef PLANETMODEL_WITH_NETCDF
+  // Preserve the writer's historical no-netCDF failure ordering: this
+  // overload must not try to read the model before reporting that writing is
+  // unavailable.
+  const auto figure = HydrostaticFigure::Spherical();
+#else
+  const auto model = Model::ReadDeck(input.model);
+  const auto figure = FigureFor(model, input.calculation);
+#endif
+  WriteVolumeKernels(kernels, input, measurement, path, figure);
+}
+
+void WriteVolumeKernels(const SampledKernels& kernels, const KernelInput& input,
+                        const KernelMeasurement& measurement,
+                        const std::filesystem::path& path,
+                        const HydrostaticFigure& figure) {
+#ifndef PLANETMODEL_WITH_NETCDF
   (void)kernels;
   (void)input;
   (void)measurement;
+  (void)figure;
   throw std::runtime_error(
       "this YSpec was built without netCDF, and does not write the model "
       "file " +
@@ -322,6 +358,13 @@ void WriteVolumeKernels(const SampledKernels& kernels, const KernelInput& input,
   file.SetMeta("scaling",
                std::string(input.scaling == Scaling::Relative ? "relative"
                                                               : "absolute"));
+  file.SetMeta("latitude_correction",
+               std::string(figure.Enabled() ? "true" : "false"));
+  file.SetMeta("rotation_rate_rad_s", figure.RotationRate());
+  file.SetMeta("surface_ellipticity", figure.SurfaceEllipticity());
+  file.SetMeta(
+      "coordinate_method",
+      std::string(figure.Enabled() ? "first_order_clairaut" : "spherical"));
   file.SetMeta("source_latitude", input.source.location.latitude);
   file.SetMeta("source_longitude", input.source.location.longitude);
   file.SetMeta("source_depth", input.source.depth);
@@ -388,7 +431,8 @@ namespace {
 // Writes kernels on a section or a map, a line for each node and place,
 // after the section's name if it has one.
 void WriteSampled(std::ofstream& file, const SampledKernels& kernels,
-                  std::string_view section, double surface) {
+                  std::string_view section, double surface,
+                  const HydrostaticFigure& figure) {
   const auto nodes = kernels.Nodes();
   const auto places = kernels.Places();
   for (auto n : std::views::iota(std::size_t{0}, nodes.size())) {
@@ -398,7 +442,8 @@ void WriteSampled(std::ofstream& file, const SampledKernels& kernels,
       file << std::format(
           "{:3}{:12.4f}{:11.4f}{:11.4f}{:11.5f}{:12.5f}", nodes[n].layer,
           (surface - nodes[n].radius) / 1e3, place.along, place.across,
-          Sphere::Latitude(place.colatitude), place.longitude / Sphere::Degree);
+          figure.GeographicLatitude(90 - place.colatitude / Sphere::Degree),
+          place.longitude / Sphere::Degree);
       for (auto j : std::views::iota(std::size_t{0}, kernels.Names().size())) {
         file << std::format("{:14.5E}", kernels.Values(j, n)[p]);
       }
@@ -411,6 +456,7 @@ void WriteSampled(std::ofstream& file, const SampledKernels& kernels,
 
 void WriteKernels(const KernelResult& result, const KernelInput& input) {
   const auto model = Model::ReadDeck(input.model);
+  const auto figure = FigureFor(model, input.calculation);
   const auto surface = model.SurfaceRadius() * model.GetScales().Length();
   const auto relative = input.scaling == Scaling::Relative;
   const auto several = input.measurements.size() > 1;
@@ -463,7 +509,14 @@ void WriteKernels(const KernelResult& result, const KernelInput& input) {
           kernel.kernels.SourceRadius() / 1e3);
       file << "# at_source";
       for (auto value : named.atSource) file << std::format(" {:.6E}", value);
-      file << "\n# radius_km depth_km weight_m3";
+      file << "\n";
+      file << std::format(
+          "# latitude_correction {} rotation_rate_rad_s {:.12E} "
+          "surface_ellipticity {:.12E} method {}\n",
+          figure.Enabled() ? "true" : "false", figure.RotationRate(),
+          figure.SurfaceEllipticity(),
+          figure.Enabled() ? "first_order_clairaut" : "spherical");
+      file << "# radius_km depth_km weight_m3";
       for (const auto& name : named.names) file << " " << name;
       file << "\n";
       const auto& radial = kernel.kernels;
@@ -486,6 +539,12 @@ void WriteKernels(const KernelResult& result, const KernelInput& input) {
       file << std::format("# per unit volume of {}X, in s m^-3{}\n",
                           relative ? "ln " : "",
                           relative ? "" : " per unit of X");
+      file << std::format(
+          "# latitude_correction {} rotation_rate_rad_s {:.12E} "
+          "surface_ellipticity {:.12E} method {}\n",
+          figure.Enabled() ? "true" : "false", figure.RotationRate(),
+          figure.SurfaceEllipticity(),
+          figure.Enabled() ? "first_order_clairaut" : "spherical");
       file << "# " << first
            << "layer depth_km along_deg across_deg latitude longitude";
       for (const auto& name : kernels.Names()) file << " " << name;
@@ -495,21 +554,21 @@ void WriteKernels(const KernelResult& result, const KernelInput& input) {
       auto [file, path] = open(".sections");
       header(file, *kernel.path, "sections along and across the path",
              "section ");
-      WriteSampled(file, *kernel.path, "path", surface);
-      WriteSampled(file, *kernel.across, "across", surface);
+      WriteSampled(file, *kernel.path, "path", surface, figure);
+      WriteSampled(file, *kernel.across, "across", surface, figure);
       check(file, path);
     }
     if (kernel.maps) {
       auto [file, path] = open(".maps");
       header(file, *kernel.maps, "maps", "");
-      WriteSampled(file, *kernel.maps, "", surface);
+      WriteSampled(file, *kernel.maps, "", surface, figure);
       check(file, path);
     }
     if (kernel.volume) {
       auto path = input.prefix;
       if (several) path += "." + m.name;
       path += ".nc";
-      WriteVolumeKernels(*kernel.volume, input, m, path);
+      WriteVolumeKernels(*kernel.volume, input, m, path, figure);
     }
   }
 }

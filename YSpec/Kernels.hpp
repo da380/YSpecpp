@@ -70,6 +70,9 @@ Direction Along(Component component);
  * great circle through them.
  */
 Direction RadialDirection(const Location& source, const Location& receiver);
+/** Geographic locations transformed with the supplied surface figure. */
+Direction RadialDirection(const Location& source, const Location& receiver,
+                          const HydrostaticFigure& figure);
 
 /**
  * @brief The horizontal direction at a receiver 90 degrees anticlockwise from
@@ -77,6 +80,9 @@ Direction RadialDirection(const Location& source, const Location& receiver);
  * snapshots.
  */
 Direction TransverseDirection(const Location& source, const Location& receiver);
+/** Geographic locations transformed with the supplied surface figure. */
+Direction TransverseDirection(const Location& source, const Location& receiver,
+                              const HydrostaticFigure& figure);
 
 /**
  * @brief A measurement on a seismogram, along a direction, through its
@@ -376,6 +382,12 @@ struct SectionOptions {
 KernelSampling PathSection(const Model& model, const Location& source,
                            const Location& receiver,
                            const SectionOptions& options = {});
+/** Uses the model-derived default rotation figure; pass @p figure to override.
+ */
+KernelSampling PathSection(const Model& model, const Location& source,
+                           const Location& receiver,
+                           const SectionOptions& options,
+                           const HydrostaticFigure& figure);
 
 /**
  * @brief The section through the earth across the path at its middle, along
@@ -385,6 +397,12 @@ KernelSampling PathSection(const Model& model, const Location& source,
 KernelSampling CrossSection(const Model& model, const Location& source,
                             const Location& receiver,
                             const SectionOptions& options = {});
+/** Uses the model-derived default rotation figure; pass @p figure to override.
+ */
+KernelSampling CrossSection(const Model& model, const Location& source,
+                            const Location& receiver,
+                            const SectionOptions& options,
+                            const HydrostaticFigure& figure);
 
 /** @brief How maps around the path are laid out. Angles are in degrees. */
 struct MapOptions {
@@ -401,6 +419,11 @@ struct MapOptions {
  */
 KernelSampling PathMaps(const Model& model, const Location& source,
                         const Location& receiver, const MapOptions& options);
+/** Uses the model-derived default rotation figure; pass @p figure to override.
+ */
+KernelSampling PathMaps(const Model& model, const Location& source,
+                        const Location& receiver, const MapOptions& options,
+                        const HydrostaticFigure& figure);
 
 /**
  * @brief Kernels for laterally varying perturbations of the elastic

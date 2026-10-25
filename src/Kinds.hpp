@@ -35,6 +35,10 @@ class Views {
  public:
   Views(std::span<const Source> sources, std::span<const Receiver> receivers,
         int maxDegree)
+      : Views(sources, receivers, maxDegree, HydrostaticFigure::Spherical()) {}
+
+  Views(std::span<const Source> sources, std::span<const Receiver> receivers,
+        int maxDegree, const HydrostaticFigure& figure)
       : place_(receivers.size()) {
     using namespace std::complex_literals;
     auto places = std::vector<Location>{};
@@ -52,8 +56,8 @@ class Views {
     auto distances = std::vector<double>{};
     for (const auto& source : sources) {
       for (const auto& place : places) {
-        auto view =
-            View{.geometry = Geometry(place, source.location), .phase = {}};
+        auto view = View{.geometry = Geometry(place, source.location, figure),
+                         .phase = {}};
         for (auto m : OrderArray<Complex>::Orders(2)) {
           view.phase[m] = std::exp(1i * (m * view.geometry.phi));
         }

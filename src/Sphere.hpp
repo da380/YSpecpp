@@ -1,8 +1,7 @@
 #pragma once
 
-// Geographic and geocentric latitudes. The model is spherical, so distances
-// and great circles are those of geocentric latitude; locations are given in
-// geographic latitude, converted with a flattening of about 1/297.
+// Spherical geometry in geocentric coordinates. Model-derived conversion
+// between geographic and geocentric latitude is owned by HydrostaticFigure.
 
 #include <array>
 #include <cmath>
@@ -12,21 +11,13 @@ namespace YSpec::Sphere {
 
 inline constexpr auto Degree = std::numbers::pi / 180;
 
-// The ratio of the tangents of geocentric and geographic latitude.
-inline constexpr auto GeocentricRatio = 0.993277;
-
-// The geocentric colatitude (radians) of a geographic latitude (degrees).
-inline double Colatitude(double latitude) {
-  return std::numbers::pi / 2 -
-         std::atan(GeocentricRatio * std::tan(latitude * Degree));
+// Convert a geocentric latitude in degrees to colatitude in radians.
+inline double Colatitude(double geocentricLatitude) {
+  return std::numbers::pi / 2 - geocentricLatitude * Degree;
 }
 
-// The geographic latitude (degrees) of a geocentric colatitude (radians).
-inline double Latitude(double colatitude) {
-  return std::atan(std::tan(std::numbers::pi / 2 - colatitude) /
-                   GeocentricRatio) /
-         Degree;
-}
+// Convert colatitude in radians to geocentric latitude in degrees.
+inline double Latitude(double colatitude) { return 90 - colatitude / Degree; }
 
 using Vector = std::array<double, 3>;
 

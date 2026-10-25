@@ -1,4 +1,5 @@
 {
+  "latitude_correction": false,
   "model": "../prem.200",
   "attenuation": false,
   "gravity": "full",
@@ -27,7 +28,7 @@
   "sources": [
     {
       "depth_km": 647.1,
-      "latitude": -13.909919806613164,
+      "latitude": -13.82,
       "longitude": -67.25,
       "moment_tensor_Nm": {
         "rr": -7.59e+20,
@@ -53,7 +54,7 @@
     ],
     "locations": [
       [
-        80.06588632614357,
+        80.0,
         0.0
       ]
     ]

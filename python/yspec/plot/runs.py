@@ -92,7 +92,11 @@ class SeismogramRun:
         self.source = _choose(source_names(self.input["sources"]), source,
                               path)
         table = prefix.with_name(prefix.name + ".receivers")
-        rows = [line.split() for line in table.read_text().splitlines()
+        receiver_lines = table.read_text().splitlines()
+        comments = [line for line in receiver_lines
+                    if line.startswith("#")]
+        self.coordinate_metadata = _coordinate_metadata(comments)
+        rows = [line.split() for line in receiver_lines
                 if not line.startswith("#")]
         rows = [row for row in rows if row[1] == self.source]
         self.receivers = []
@@ -157,6 +161,15 @@ class SnapshotRun:
         self.model = self.path.parent / self.input["model"]
         self.times = values(self.input["snapshots"]["times_s"])
         self._data = []
+        suffix = f".{self.source}.1" if len(names) > 1 else ".1"
+        snapshot_path = prefix.with_name(prefix.name + suffix)
+        self.coordinate_metadata = _coordinate_metadata(
+            [line for line in snapshot_path.read_text().splitlines()
+             if line.startswith("#")])
+        self.latitude_correction = self.coordinate_metadata[
+            "latitude_correction"]
+        self.surface_ellipticity = self.coordinate_metadata[
+            "surface_ellipticity"]
         for k in range(1, len(self.times) + 1):
             suffix = f".{k}" if len(names) == 1 else f".{self.source}.{k}"
             self._data.append(np.loadtxt(prefix.with_name(prefix.name +
@@ -176,12 +189,14 @@ class SnapshotRun:
         return self._data[time_index][:, self.COLUMNS[component]].reshape(shape)
 
 
-def _along(start, azimuth, distance):
+def _along(start, azimuth, distance, surface_ellipticity):
     """The geographic latitude and longitude (degrees) at a distance and
     azimuth (degrees) from a point, along a great circle of the sphere of
     geocentric latitudes, as YSpec places receivers."""
-    ratio = 0.993277
-    latitude = math.atan(ratio * math.tan(math.radians(start[0])))
+    ratio = 1 - 2 * surface_ellipticity
+    geographic = math.radians(start[0])
+    latitude = math.atan2(ratio * math.sin(geographic),
+                          math.cos(geographic))
     longitude = math.radians(start[1])
     a = math.radians(azimuth)
     d = math.radians(distance)
@@ -189,15 +204,19 @@ def _along(start, azimuth, distance):
                     math.cos(latitude) * math.sin(d) * math.cos(a))
     turn = math.atan2(math.sin(a) * math.sin(d) * math.cos(latitude),
                       math.cos(d) - math.sin(latitude) * math.sin(end))
-    return (math.degrees(math.atan(math.tan(end) / ratio)),
+    return (math.degrees(math.atan2(math.sin(end),
+                                    ratio * math.cos(end))),
             math.degrees(longitude + turn))
 
 
-def _distance(a, b):
+def _distance(a, b, surface_ellipticity):
     """The angle (degrees) between two geographic places, on the sphere of
     their geocentric latitudes."""
     def unit(place):
-        latitude = math.atan(0.993277 * math.tan(math.radians(place[0])))
+        ratio = 1 - 2 * surface_ellipticity
+        geographic = math.radians(place[0])
+        latitude = math.atan2(ratio * math.sin(geographic),
+                              math.cos(geographic))
         longitude = math.radians(place[1])
         return np.array([math.cos(latitude) * math.cos(longitude),
                          math.cos(latitude) * math.sin(longitude),
@@ -233,7 +252,9 @@ def _read_sampled(file, section=None):
     """The kernels in a .sections or .maps file, of one section if named."""
     header = [line for line in file.read_text().splitlines()
               if line.startswith("#")]
-    columns = header[-1].lstrip("# ").split()
+    columns = next(line.lstrip("# ").split() for line in header
+                   if line.startswith(("# section layer ", "# map layer ",
+                                       "# layer depth_km ")))
     rows = [line.split() for line in file.read_text().splitlines()
             if not line.startswith("#")]
     if section is not None:
@@ -290,11 +311,18 @@ class KernelRun:
         file = self._file(".kernels")
         header = [line for line in file.read_text().splitlines()
                   if line.startswith("#")]
+        self.coordinate_metadata = _coordinate_metadata(
+            header)
+        self.surface_ellipticity = self.coordinate_metadata[
+            "surface_ellipticity"]
+        self.latitude_correction = self.coordinate_metadata[
+            "latitude_correction"]
         self.description = header[0].removeprefix("# yspec-kernels: ")
         self.at_source = [float(v) for v in next(
             line for line in header
             if line.startswith("# at_source")).split()[2:]]
-        self.parameters = header[-1].split()[4:]
+        self.parameters = next(line.split()[4:] for line in header
+                               if line.startswith("# radius_km "))
         table = np.loadtxt(file)
         self.radius, self.depth, self.weight = table[:, :3].T
         self.kernels = {p: table[:, 3 + j]
@@ -311,9 +339,11 @@ class KernelRun:
         if "location" in receiver:
             self.receiver_location = tuple(receiver["location"])
         else:
-            self.receiver_location = _along(source, receiver["azimuth_deg"],
-                                            receiver["distance_deg"])
-        self.distance = _distance(source, self.receiver_location)
+            self.receiver_location = _along(
+                source, receiver["azimuth_deg"], receiver["distance_deg"],
+                self.surface_ellipticity)
+        self.distance = _distance(source, self.receiver_location,
+                                  self.surface_ellipticity)
 
     def _file(self, suffix):
         return self.prefix.with_name(self.prefix.name + suffix)
@@ -326,3 +356,40 @@ class KernelRun:
     def maps(self):
         """The kernels on the maps."""
         return _read_sampled(self._file(".maps"))
+
+
+def _coordinate_metadata(lines):
+    """Read saved figure metadata, retaining the legacy Earth mapping for
+    outputs generated before metadata was recorded. The current input alone
+    cannot relabel an archived output's saved coordinates."""
+    result = {"latitude_correction": True,
+              "rotation_rate_rad_s": 7.292115e-5,
+              "surface_ellipticity": 0.0033615,
+              "method": "legacy_fixed_earth"}
+    for line in lines:
+        comment = line.removeprefix("# ")
+        marker = " | latitude_correction "
+        if marker in comment:
+            comment = "latitude_correction " + comment.rsplit(marker, 1)[1]
+        if not comment.startswith("latitude_correction "):
+            continue
+        fields = comment.split()
+        result["latitude_correction"] = fields[1] == "true"
+        result["rotation_rate_rad_s"] = float(fields[3])
+        result["surface_ellipticity"] = float(fields[5])
+        result["method"] = fields[7]
+        return result
+    return result
+
+
+def coordinate_label(run):
+    """Describe saved latitude semantics in figures."""
+    metadata = getattr(run, "coordinate_metadata", None)
+    if metadata is None:
+        return "legacy Earth coordinate conversion"
+    method = metadata["method"]
+    if not run.latitude_correction:
+        return "geocentric spherical coordinates"
+    if method == "first_order_clairaut":
+        return "first-order hydrostatic figure"
+    return "legacy Earth latitude mapping"

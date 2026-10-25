@@ -140,6 +140,21 @@ void WriteVolumeKernels(const SampledKernels& kernels, const KernelInput& input,
                         const std::filesystem::path& path);
 
 /**
+ * @brief Writes three-dimensional kernels using an explicitly selected figure.
+ * @param kernels The kernels.
+ * @param input What they are of, which the file's metadata record.
+ * @param measurement Which measurement they are of.
+ * @param path The file.
+ * @param figure Surface-coordinate convention used by the calculation.
+ * @throws std::runtime_error if this YSpec does not write model files, and
+ * planetmodel::Error if the file cannot be written.
+ */
+void WriteVolumeKernels(const SampledKernels& kernels, const KernelInput& input,
+                        const KernelMeasurement& measurement,
+                        const std::filesystem::path& path,
+                        const HydrostaticFigure& figure);
+
+/**
  * @brief Writes the kernels of each measurement and the measurement as text,
  * with the prefix, or with the prefix and the measurement's name when there
  * are several: `.kernels`, whose header gives the measurement, the units and

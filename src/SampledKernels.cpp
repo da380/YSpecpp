@@ -197,9 +197,10 @@ std::vector<KernelNode> NodesThrough(const Model& model, double spacing) {
 
 using Vector = Sphere::Vector;
 
-Vector Unit(const Location& location) {
-  return Sphere::Unit(Sphere::Colatitude(location.latitude),
-                      location.longitude * Sphere::Degree);
+Vector Unit(const Location& location, const HydrostaticFigure& figure) {
+  return Sphere::Unit(
+      Sphere::Colatitude(figure.GeocentricLatitude(location.latitude)),
+      location.longitude * Sphere::Degree);
 }
 
 double Dot(const Vector& a, const Vector& b) {
@@ -223,9 +224,10 @@ struct PathFrame {
   Vector source, travel, normal;
   double distance;
 
-  PathFrame(const Location& from, const Location& to)
-      : source{Unit(from)}, travel{}, normal{}, distance{} {
-    const auto receiver = Unit(to);
+  PathFrame(const Location& from, const Location& to,
+            const HydrostaticFigure& figure)
+      : source{Unit(from, figure)}, travel{}, normal{}, distance{} {
+    const auto receiver = Unit(to, figure);
     const auto along = Dot(source, receiver);
     travel = Normalised({receiver[0] - along * source[0],
                          receiver[1] - along * source[1],
@@ -303,9 +305,10 @@ KernelSampling VolumeSampling(const Model& model, const VolumeGrid& grid) {
 
 KernelSampling PathSection(const Model& model, const Location& source,
                            const Location& receiver,
-                           const SectionOptions& options) {
+                           const SectionOptions& options,
+                           const HydrostaticFigure& figure) {
   CheckSpacing(options.spacing, options.margin, options.halfWidth);
-  const auto path = PathFrame(source, receiver);
+  const auto path = PathFrame(source, receiver, figure);
   if (path.distance + 2 * options.margin > 360) {
     throw std::invalid_argument("a section cannot go round more than once");
   }
@@ -320,9 +323,10 @@ KernelSampling PathSection(const Model& model, const Location& source,
 
 KernelSampling CrossSection(const Model& model, const Location& source,
                             const Location& receiver,
-                            const SectionOptions& options) {
+                            const SectionOptions& options,
+                            const HydrostaticFigure& figure) {
   CheckSpacing(options.spacing, options.margin, options.halfWidth);
-  const auto path = PathFrame(source, receiver);
+  const auto path = PathFrame(source, receiver, figure);
   auto sampling = KernelSampling{
       .nodes = NodesThrough(model, options.radialSpacing), .places = {}};
   for (auto across :
@@ -333,9 +337,10 @@ KernelSampling CrossSection(const Model& model, const Location& source,
 }
 
 KernelSampling PathMaps(const Model& model, const Location& source,
-                        const Location& receiver, const MapOptions& options) {
+                        const Location& receiver, const MapOptions& options,
+                        const HydrostaticFigure& figure) {
   CheckSpacing(options.spacing, options.margin, options.halfWidth);
-  const auto path = PathFrame(source, receiver);
+  const auto path = PathFrame(source, receiver, figure);
   const auto& scales = model.GetScales();
   const auto surface = model.SurfaceRadius() * scales.Length();
   auto sampling = KernelSampling{};
@@ -358,6 +363,26 @@ KernelSampling PathMaps(const Model& model, const Location& source,
     }
   }
   return sampling;
+}
+
+KernelSampling PathSection(const Model& model, const Location& source,
+                           const Location& receiver,
+                           const SectionOptions& options) {
+  return PathSection(model, source, receiver, options,
+                     HydrostaticFigure::FromModel(model));
+}
+
+KernelSampling CrossSection(const Model& model, const Location& source,
+                            const Location& receiver,
+                            const SectionOptions& options) {
+  return CrossSection(model, source, receiver, options,
+                      HydrostaticFigure::FromModel(model));
+}
+
+KernelSampling PathMaps(const Model& model, const Location& source,
+                        const Location& receiver, const MapOptions& options) {
+  return PathMaps(model, source, receiver, options,
+                  HydrostaticFigure::FromModel(model));
 }
 
 namespace {
@@ -411,10 +436,13 @@ std::vector<std::vector<SampledKernels>> ComputeSampledKernels(
   // The places, in blocks, and where each is seen from the source and from
   // the receiver.
   using Sphere::Degree;
+  const auto figure = FigureFor(model, calculation);
   const auto& receiver = measurements.front().receiver;
-  const auto thetaS = Sphere::Colatitude(source.location.latitude);
+  const auto thetaS =
+      Sphere::Colatitude(figure.GeocentricLatitude(source.location.latitude));
   const auto phiS = source.location.longitude * Degree;
-  const auto thetaR = Sphere::Colatitude(receiver.location.latitude);
+  const auto thetaR =
+      Sphere::Colatitude(figure.GeocentricLatitude(receiver.location.latitude));
   const auto phiR = receiver.location.longitude * Degree;
   constexpr auto blockSize = std::size_t{64};
   auto blocks = std::vector<Block>{};

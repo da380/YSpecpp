@@ -18,7 +18,7 @@ import numpy as np
 from planetmodel.deck import MINEOS, read_deck
 from planetmodel.slices import Shown
 
-from yspec.plot.runs import DIMENSIONS, SeismogramRun, SnapshotRun
+from yspec.plot.runs import DIMENSIONS, KernelRun, SeismogramRun, SnapshotRun
 from yspec.plot.sections import _parameter
 from yspec.plot.seismograms import compare, traces
 from yspec.plot.snapshots import _draw_map, _section_slice, snapshots
@@ -93,7 +93,9 @@ def test_instrument_plot_unit_comes_from_sac_metadata(tmp_path):
     (tmp_path / "station.pz").write_text(
         "* INPUT UNIT : M/S\n* OUTPUT UNIT : COUNTS\nZEROS 0\nPOLES 0\n")
     (tmp_path / "out.receivers").write_text(
-        "# file source latitude longitude depth_km distance_deg azimuth_deg back_azimuth_deg\n"
+        "# file source latitude longitude depth_km distance_deg azimuth_deg back_azimuth_deg | "
+        "latitude_correction true rotation_rate_rad_s 7.292115e-05 "
+        "surface_ellipticity 3.3e-03 method first_order_clairaut\n"
         "out.1 1 12 30 3 20 40 220\n")
     config = {
         "output": {"prefix": "out", "quantity": "velocity"},
@@ -105,6 +107,7 @@ def test_instrument_plot_unit_comes_from_sac_metadata(tmp_path):
     path.write_text(json.dumps(config))
     run = SeismogramRun(path)
     assert run.receiver(1).units == "COUNTS"
+    assert run.coordinate_metadata["method"] == "first_order_clairaut"
 
 
 def test_first_seismogram_plot_uses_the_selected_receivers_units(tmp_path):
@@ -116,7 +119,9 @@ def test_first_seismogram_plot_uses_the_selected_receivers_units(tmp_path):
     (tmp_path / "instrument.1").write_text(
         "0 1 0 0\n1 -0.5 0 0\n")
     (tmp_path / "out.receivers").write_text(
-        "# file source latitude longitude depth_km distance_deg azimuth_deg back_azimuth_deg\n"
+        "# file source latitude longitude depth_km distance_deg azimuth_deg back_azimuth_deg | "
+        "latitude_correction true rotation_rate_rad_s 7.292115e-05 "
+        "surface_ellipticity 3.3e-03 method first_order_clairaut\n"
         "ground.1 1 12 30 3 20 40 220\n"
         "instrument.1 1 13 31 3 25 45 225\n")
     config = {
@@ -143,6 +148,44 @@ def test_first_seismogram_plot_uses_the_selected_receivers_units(tmp_path):
             text=True, env=env)
         assert expected in output.read_text()
         assert expected.split("(")[1].rstrip(")") in completed.stdout
+
+
+def test_kernel_maps_reader_accepts_current_metadata_bearing_header(tmp_path):
+    (tmp_path / "in.measurement").write_text("0 1 1 1\n1 0 1 0\n")
+    (tmp_path / "in.kernels").write_text(
+        "# yspec-kernels: test\n"
+        "# at_source 0 0\n"
+        "# radius_km depth_km weight_m3 vp vs\n"
+        "# latitude_correction true rotation_rate_rad_s 7.292115e-05 "
+        "surface_ellipticity 3.3e-03 method first_order_clairaut\n"
+        "6370 1 1 2 3\n"
+        "6371 0 1 2 3\n")
+    (tmp_path / "in.maps").write_text(
+        "# yspec-kernels: maps\n"
+        "# per unit volume, in s m^-3\n"
+        "# latitude_correction true rotation_rate_rad_s 7.292115e-05 "
+        "surface_ellipticity 3.3e-03 method first_order_clairaut\n"
+        "# layer depth_km along_deg across_deg latitude longitude vp vs\n"
+        "8 100 0 -4 34.79 39.78 1.0 2.0\n"
+        "8 100 0 4 38.79 31.14 3.0 4.0\n")
+    config = {
+        "model": "unused.deck",
+        "output": {"prefix": "in"},
+        "sources": [{"depth_km": 100, "latitude": 0, "longitude": 0}],
+        "receiver": {"depth_km": 3, "location": [0, 30]},
+        "measurements": [{"name": "S", "component": "T",
+                          "traveltime": {"window_s": [0, 1]}}],
+    }
+    path = tmp_path / "input.json"
+    path.write_text(json.dumps(config))
+
+    run = KernelRun(path)
+    maps = run.maps()
+    assert run.coordinate_metadata["method"] == "first_order_clairaut"
+    assert len(maps.layers) == 1
+    assert maps.along.tolist() == [0.0, 0.0]
+    assert maps.across.tolist() == [-4.0, 4.0]
+    np.testing.assert_array_equal(maps.layers[0].values["vp"], [[1.0, 3.0]])
 
 
 class FakeMapAxes:
@@ -187,12 +230,16 @@ def test_snapshot_run_keeps_saved_latitude_and_longitude(tmp_path):
         distance = 0.0 if len(rows) % 2 == 0 else 30.0
         rows.append([3.0, distance, azimuth, *pair, 0.0, 0.0, 0.0])
     (tmp_path / "out.1").write_text(
-        "# columns\n" + "\n".join(" ".join(map(str, row))
+        "# source A | B, 1 s after the origin, displacement | "
+        "latitude_correction false rotation_rate_rad_s 0.000000e+00 "
+        "surface_ellipticity 0.000000e+00 method spherical\n"
+        "# depth_km distance_deg azimuth_deg latitude longitude up away "
+        "transverse\n" + "\n".join(" ".join(map(str, row))
                                    for row in rows) + "\n")
     config = {
         "model": str(Path(__file__).parents[2] / "examples" / "prem.200"),
         "output": {"prefix": "out", "quantity": "displacement"},
-        "sources": [{"name": "1", "latitude": 0.0, "longitude": 0.0,
+        "sources": [{"name": "A | B", "latitude": 0.0, "longitude": 0.0,
                      "depth_km": 1.0}],
         "snapshots": {"times_s": [1], "depths_km": [3],
                       "distances_deg": [0, 30], "azimuths_deg": [0, 180]},
@@ -200,6 +247,8 @@ def test_snapshot_run_keeps_saved_latitude_and_longitude(tmp_path):
     path = tmp_path / "input.json"
     path.write_text(json.dumps(config))
     run = SnapshotRun(path)
+    assert run.coordinate_metadata["method"] == "spherical"
+    assert run.coordinate_metadata["latitude_correction"] is False
     np.testing.assert_array_equal(run.latitude,
                                   np.array([[11.0, 12.0], [31.0, 32.0]]))
     np.testing.assert_array_equal(run.longitude,
@@ -411,10 +460,13 @@ def test_volume_adapter_converts_geocentric_grid_to_geographic_latitude():
     grid = AngularGrid(colatitude, np.radians([0.0, 90.0]), kind="custom")
     cut = SphereSlice(1.0, grid, np.ones((3, 2)), np.zeros((3, 2, 3)),
                       np.zeros((3, 2, 3)), Shown("K"))
-    geographic = _geographic_slice(cut)
+    geographic = _geographic_slice(cut, 0.003334826529126116)
     actual = 90.0 - np.degrees(geographic.grid.colatitudes)
-    expected = np.degrees(np.arctan(
-        np.tan(np.radians([60.0, 0.0, -60.0])) / 0.993277))
+    e_surface = 0.003334826529126116
+    q = 1 - 2 * e_surface
+    expected = np.degrees(np.arctan2(
+        np.sin(np.radians([60.0, 0.0, -60.0])),
+        q * np.cos(np.radians([60.0, 0.0, -60.0]))))
     np.testing.assert_allclose(actual, expected)
     np.testing.assert_array_equal(geographic.values, cut.values)
 
@@ -424,16 +476,19 @@ def test_volume_overlay_follows_the_field_great_circle_plane():
 
     source = (36.87, 35.58)
     receiver = (12.0, 80.0)
-    longitude, latitude = _geographic_great_circle(source, receiver, 51)
+    longitude, latitude = _geographic_great_circle(
+        source, receiver, 0.003334826529126116, samples=51)
     assert len(longitude) == len(latitude) == 51
     assert (latitude[0], longitude[0]) == pytest.approx(source)
     assert (latitude[-1], longitude[-1]) == pytest.approx(receiver)
-    s, r = _unit(*source), _unit(*receiver)
+    e_surface = 0.003334826529126116
+    s, r = _unit(*source, e_surface), _unit(*receiver, e_surface)
     normal = np.cross(s, r)
-    points = np.stack([_unit(lat, lon) for lat, lon in
+    points = np.stack([_unit(lat, lon, e_surface) for lat, lon in
                        zip(latitude, longitude)])
     np.testing.assert_allclose(points @ normal, 0.0, atol=2e-14)
-    seam_lon, _ = _geographic_great_circle((10.0, 170.0), (20.0, -170.0), 51)
+    seam_lon, _ = _geographic_great_circle(
+        (10.0, 170.0), (20.0, -170.0), 0.003334826529126116, samples=51)
     assert np.max(np.abs(np.diff(seam_lon))) < 2.0
 
 

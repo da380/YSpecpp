@@ -20,16 +20,17 @@ import yspec
 
 model = yspec.Model.prem()  # includes the ocean
 source = yspec.Source(
-    latitude=-13.909919806613164, longitude=-67.25, depth_km=647.1,
+    latitude=-13.82, longitude=-67.25, depth_km=647.1,
     moment_tensor=dict(rr=-7.59e20, rt=-2.5e21, rp=4.2e19,
                        tt=7.75e20, tp=-2.48e20, pp=-1.6e19),
     name="bolivia")
-receivers = [yspec.Receiver(latitude=80.06588632614357, longitude=0,
+receivers = [yspec.Receiver(latitude=80.0, longitude=0,
                             depth_km=3)]
 calculation = yspec.Calculation(
     degrees=(0, 300), frequencies_mhz=(1.5, 21), length_min=300,
     time_step_s=1, filter_mhz=(1.9, 2.0, 20.0, 20.1),
-    gravity="full", attenuation=False, quantity="displacement")
+    gravity="full", attenuation=False, quantity="displacement",
+    latitude_correction=False)
 
 seismograms = yspec.seismograms(model, calculation, source, receivers,
                                 progress=True)
@@ -39,7 +40,21 @@ seismograms.data              # [source, receiver, component, sample]: Z, N, E
 
 Lengths are in km, angles in degrees, frequencies in mHz and times in s, as
 in the programs' input files; the results are numpy arrays in SI units.
-The source and receiver latitudes are geographic coordinates converted from the geocentric locations in the published Bolivia comparison. Its 300-to-600-minute waveform difference exceeds the current 1% duration target, so this reproduces the comparison setup without claiming a converged reference.
+This comparison fixture uses the published geocentric source latitude (−13.82°) and receiver latitude (80°) with latitude correction disabled, preserving the historical spherical geometry. The new default instead derives a first-order hydrostatic figure from model density and rotation. The 300-to-600-minute waveform difference exceeds the current 1% duration target, so this reproduces the comparison setup without claiming a converged reference.
+
+For geographic coordinates with the default correction enabled, use the same
+model-derived figure for any standalone great-circle or direction helper:
+
+```python
+figure = model.figure(calculation.rotation_rate_rad_s,
+                      calculation.latitude_correction)
+points = yspec.great_circle(source, 60, [0, 30, 60], figure=figure)
+```
+
+The model-less `yspec.great_circle(...)` convention is spherical/geocentric;
+it does not silently assume an Earth model. The same explicit-figure rule
+applies to radial and transverse direction helpers. A disabled correction
+uses geocentric coordinates directly.
 
 For plots, `yspec-plot traces --components ZNE` selects the physical Z, N and E
 components; the CLI default is ZRT, with R radial away from the source and T
