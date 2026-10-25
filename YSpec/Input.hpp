@@ -14,6 +14,8 @@
  *   "model": "prem.200",
  *   "attenuation": true,
  *   "gravity": "full",
+ *   "latitude_correction": true,
+ *   "rotation_rate_rad_s": 7.292115e-5,
  *   "output": {
  *     "prefix": "yspec.out",
  *     "quantity": "velocity",
@@ -53,7 +55,13 @@
  * between its last two; it may be left out. "attenuation", "gravity", the
  * corrections, "degrees.min", the filter, the sources' names and "solver"
  * have defaults (true, "full", false, 0, none, their numbers from 1, and the
- * solver's defaults).
+ * solver's defaults). With "latitude_correction" true (the default),
+ * geographic latitude is converted using the first-order hydrostatic figure
+ * calculated from this model's density and "rotation_rate_rad_s" (default:
+ * the IERS nominal mean Earth angular velocity). With it false, supplied
+ * coordinates are geocentric and conversion is the identity. First-order
+ * figure calculations require a complete model with a regular centre and
+ * slow rotation; this option does not add nonspherical wave propagation.
  *
  * "receivers" is one group or an array of them. A group has one depth or
  * several, and either a list of locations or a profile along a great circle

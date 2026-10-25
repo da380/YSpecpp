@@ -26,6 +26,8 @@ const auto kPrem = std::string(YSPEC_EXAMPLES_DIR) + "/prem.200";
 
 Calculation Small() {
   auto c = Calculation{};
+  // These volume/radial identities are checked on the spherical field grid.
+  c.latitudeCorrection = false;
   c.degrees = {0, 16};
   c.band = {0.2e-3, 3e-3};
   c.sampling = {1800, 60};
@@ -389,20 +391,24 @@ TEST(VolumeKernels, AreTheSameComputedTogether) {
                              Force{}};
   const auto receiver = Receiver{{-15, 50}, 3e3};
   const auto window = Window{.start = 600, .end = 1500, .taper = 100};
+  const auto figure = FigureFor(model, calculation);
   // Three measurements in two directions.
   const auto measurements = std::vector<Measurement>{
       Traveltime(model, calculation, source, receiver, Along(Vertical), window),
       Traveltime(model, calculation, source, receiver,
-                 TransverseDirection(source.location, receiver.location),
+                 TransverseDirection(source.location, receiver.location,
+                                     figure),
                  {.start = 700, .end = 1200, .taper = 100}),
       Traveltime(model, calculation, source, receiver, Along(Vertical),
                  {.start = 900, .end = 1500, .taper = 100})};
   const auto samplings = std::vector<KernelSampling>{
       PathSection(model, source.location, receiver.location,
-                  {.margin = 5, .spacing = 5, .radialSpacing = 1000e3}),
+                  {.margin = 5, .spacing = 5, .radialSpacing = 1000e3},
+                  figure),
       PathMaps(
           model, source.location, receiver.location,
-          {.depths = {200e3}, .margin = 5, .halfWidth = 10, .spacing = 5})};
+          {.depths = {200e3}, .margin = 5, .halfWidth = 10, .spacing = 5},
+          figure)};
   const auto together = ComputeSampledKernels(
       model, calculation, source, measurements, ParameterSet::Velocities,
       Scaling::Relative, samplings);
@@ -455,6 +461,7 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   const auto model = Model::ReadDeck(kPrem);
   const auto source = Location{10, 20};
   const auto receiver = Location{-15, 50};
+  const auto figure = HydrostaticFigure::Spherical();
   const auto distance = [](const KernelPlace& a, double theta, double phi) {
     return GeometryAt(a.colatitude, a.longitude, theta, phi).distance /
            Sphere::Degree;
@@ -466,7 +473,8 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   const auto delta =
       GeometryAt(thetaR, phiR, thetaS, phiS).distance / Sphere::Degree;
   const auto path =
-      PathSection(model, source, receiver, {.margin = 10, .spacing = 0.5});
+      PathSection(model, source, receiver, {.margin = 10, .spacing = 0.5},
+                  figure);
   for (const auto& place : path.places) {
     EXPECT_NEAR(distance(place, thetaS, phiS), std::abs(place.along), 1e-9);
     EXPECT_NEAR(distance(place, thetaR, phiR), std::abs(place.along - delta),
@@ -480,7 +488,8 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   EXPECT_EQ(path.nodes.back().layer, model.NumberOfLayers() - 1);
 
   const auto across =
-      CrossSection(model, source, receiver, {.halfWidth = 20, .spacing = 1});
+      CrossSection(model, source, receiver, {.halfWidth = 20, .spacing = 1},
+                   figure);
   for (const auto& place : across.places) {
     // Equally far from source and receiver, at the distance from the
     // middle of the path that a right angle there gives.
@@ -492,7 +501,8 @@ TEST(VolumeKernels, LayOutSectionsAndMapsByThePath) {
   }
 
   const auto maps = PathMaps(model, source, receiver,
-                             {.depths = {100e3, 670e3}, .spacing = 2});
+                             {.depths = {100e3, 670e3}, .spacing = 2},
+                             figure);
   ASSERT_EQ(maps.nodes.size(), 2u);
   // At a discontinuity, the layer above.
   const auto length = model.GetScales().Length();

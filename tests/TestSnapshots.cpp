@@ -32,6 +32,7 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
   const auto model = Model::ReadDeck(kPrem);
   auto calculation = Small();
   calculation.quantity = Quantity::Velocity;
+  const auto figure = FigureFor(model, calculation);
   const auto sources = std::vector<Source>{
       {{10, 20}, 30e3, {.rr = 1e18, .rt = 2e18, .tp = -1e18}},
       {{-30, 100}, 200e3, {.rp = 1e18, .tt = 1e18, .pp = -1e18}}};
@@ -54,7 +55,8 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
       for (auto azimuth : grid.azimuths) {
         for (auto distance : grid.distances) {
           const auto place =
-              GreatCircle(source.location, azimuth, distance, distance, 1);
+              GreatCircle(source.location, azimuth, distance, distance, 1,
+                          figure);
           receivers.push_back({place[0], depth});
         }
       }
@@ -84,7 +86,8 @@ TEST(Snapshots, HoldTheSamplesOfSeismogramsAtTheSamePoints) {
           const auto beta =
               grid.distances[i] == 0
                   ? grid.azimuths[a] * pi / 180
-                  : pi - Geometry(receivers[k].location, source.location)
+                  : pi - Geometry(receivers[k].location, source.location,
+                                  figure)
                              .rotation;
           for (auto t : {0, 1, 2}) {
             const auto n = samples[t];

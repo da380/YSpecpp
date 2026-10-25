@@ -8,13 +8,15 @@
  * colatitude @f$\Delta@f$, the epicentral distance, and longitude
  * @f$\phi = \pi - \zeta_s@f$ with @f$\zeta_s@f$ the azimuth of the receiver
  * from the source; the horizontal components there are rotated to north and
- * east with the azimuth of the source from the receiver. Geographic latitudes
- * are converted to geocentric with a flattening of about 1/297, and a point
- * exactly at a pole is moved 0.02 degrees off it, where the azimuths are
- * undefined.
+ * east with the azimuth of the source from the receiver. The figure-aware
+ * overload converts geographic latitudes with the supplied model-derived
+ * figure. A point exactly at a pole is moved 0.02 degrees off it, where the
+ * azimuths are undefined. The model-less overload treats coordinates as
+ * geocentric on a sphere.
  */
 
 #include <YSpec/Location.hpp>
+#include <YSpec/HydrostaticFigure.hpp>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -77,17 +79,26 @@ inline ReceiverGeometry GeometryAt(double thetaR, double phiR, double thetaS,
  * @brief The geometry of a receiver relative to a source.
  */
 inline ReceiverGeometry Geometry(const Location& receiver,
-                                 const Location& source) {
+                                 const Location& source,
+                                 const HydrostaticFigure& figure) {
   using Sphere::Degree;
   auto offPole = [](double latitude) {
     if (latitude == 90) return 89.98;
     if (latitude == -90) return -89.98;
     return latitude;
   };
-  return GeometryAt(Sphere::Colatitude(offPole(receiver.latitude)),
+  return GeometryAt(Sphere::Colatitude(
+                        figure.GeocentricLatitude(offPole(receiver.latitude))),
                     receiver.longitude * Degree,
-                    Sphere::Colatitude(offPole(source.latitude)),
+                    Sphere::Colatitude(
+                        figure.GeocentricLatitude(offPole(source.latitude))),
                     source.longitude * Degree);
+}
+
+// Model-less geometry uses the supplied coordinates as geocentric.
+inline ReceiverGeometry Geometry(const Location& receiver,
+                                 const Location& source) {
+  return Geometry(receiver, source, HydrostaticFigure::Spherical());
 }
 
 }  // namespace YSpec

@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include "HydrostaticFigure.hpp"
 
 namespace YSpec {
 
@@ -84,6 +85,8 @@ struct Calculation {
   Sampling sampling = {};      ///< The time series.
   std::optional<Taper> taper;  ///< A taper applied to the spectra, if any.
   SolverOptions solver = {};   ///< Settings of the radial integrations.
+  bool latitudeCorrection = true;  ///< Use the model's hydrostatic figure for coordinates.
+  double rotationRate = EarthRotationRate;  ///< Uniform spin rate (rad/s).
 };
 
 /**

@@ -6,6 +6,22 @@ raw-output and SVG hashes are recorded in the “Current-source Bolivia
 candidate” and “Phase 2C rendered assets” sections below. It is an explanatory
 trace, not a scientific reference result.
 
+The figure-aware-coordinate implementation was validated against the saved
+geocentric Bolivia setup with `latitude_correction: false`: the fixture SHA-256
+is `349a11a2a3b877424e5ac994c830318fb44a029d53ccadcd9c9aafdf8a6f6232`, and
+its 18,001-row trace SHA-256 is
+`196c82b1f2ef926146fe5b32e219891374a4af632e75886e52353214f91d7021`, matching
+the archived YSpec baseline byte for byte. The final compatibility rerun used
+two numerical threads and completed in 50.51 s. Its receiver sidecar retains one
+schema comment and appends coordinate metadata after `|`; its SHA-256 is
+`ed6836d917cd72e276135219aa88f68f173364517a04900c83f18b45b90909c2`. The
+standalone script parsed that inline header. The standalone renderer regenerated
+the current SVG with SHA-256
+`4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b`; its
+pixels and bytes are unchanged. This comparison preserves the historical
+spherical geometry and is separate from the same-geographic-input diagnostic
+for the newly computed default figure.
+
 ## Historical Phase 1 illustration (retired 91-sample render)
 
 The records in this section describe the earlier 91-row, 20-second illustration;
@@ -44,14 +60,23 @@ earlier provenance applies to this run.
 This section records the new candidate without replacing the historical runs
 above. The canonical fixture follows the user-directed DSpecM1D Figure 2 case:
 PREM TI with the ocean, no attenuation, full gravity, displacement; source at
-647.1 km with the documented full moment tensor and geographic coordinates
-(-13.909919806613164°, -67.25°); receiver at (80.06588632614357°, 0°), depth
+647.1 km with the documented full moment tensor and geocentric coordinates
+(-13.82°, -67.25°); receiver at (80°, 0°), depth
 3 km; degrees 0–300; 1.5–21 mHz; 300 minutes at 1 s; fixed four-corner filter
 [1.9, 2.0, 20.0, 20.1] mHz. The model deck's elastic columns match the reference
 model; its SHA-256 is recorded in the machine-readable evidence manifest. The
-YSpec++ source coordinate is already geographic. It maps to geocentric latitude
--13.82° at the source and 80° at the receiver; do not apply a second latitude
-conversion.
+The canonical fixture sets `latitude_correction: false`, so the supplied
+latitudes are interpreted directly as geocentric and retain the historical
+comparison geometry. The new default computes a model-specific first-order
+figure; the same unchanged geographic inputs shift epicentral distance by
+about 0.001° (a coordinate-only diagnostic, not a convergence claim).
+
+Here, “current-source Bolivia candidate” refers to the Phase 2A run against its
+recorded source and dependency revisions, not to a rerun of every documentation
+example with the computed-figure default. The 25 October coordinate campaign
+retains other saved numerical artifacts under their recorded historical
+mapping and rerenders only affected displays; see the dated scope note in the
+[all-plots provenance record](all-plots-provenance.md).
 
 The current-source baseline was run with the source-verified `yspec` binary
 identified in [first-seismogram-evidence.json](first-seismogram-evidence.json).
@@ -128,7 +153,7 @@ The section asset was rendered with the documented `--measurement shear-packet -
 | `docs/site/examples/first-seismogram.json` | `ce09532d22437c8e3266ff855f83dd05e039328bd2fe116522aa8ccf87ac7ab3` |
 | `examples/prem.200` | `4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea` |
 | Bolivia `bolivia.out.1` | `196c82b1f2ef926146fe5b32e219891374a4af632e75886e52353214f91d7021` |
-| `docs/site/examples/plot_first_seismogram.py` | `663ed44a12176d9d20dfa3c6e7536dd7c4a3cbb0615f8b5f7609f2e16d9f14a7` |
+| `docs/site/examples/plot_first_seismogram.py` | `c092e76167c90f15930535ccbd4c687955b2a50e15a030dd18d96159c790f636` |
 | `python/yspec/plot/seismograms.py` | `aac9a45d7ffbc166d97dc42c1536870248bca817c88bcd110fecf98899fe0b5e` |
 | `docs/site/examples/kernels-small.json` | `7b0efae842bff4b414b89eaecf209a986d6e918e0641e147cea0881d46009cc0` |
 | `python/yspec/plot/kernels.py` | `ebf0b79a4a2787aef2d2450e5ba9e50b153643a8c70de1873d19a92a1801d6db` |
@@ -144,4 +169,4 @@ The final section-asset correction selects `vs` explicitly for the transverse `s
 
 ## PR5 P2 trace-specific renderer refresh
 
-The tutorial renderer was run from the saved 18,001-sample Bolivia trace and its receiver table using a temporary input copy that changes only the output prefix and source name to locate those saved files. The renderer now resolves the matching receiver row before choosing distance and units. The regenerated SVG is byte-identical to the tracked illustration (SHA-256 `4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b`); no saved waveform was changed. The current renderer hash is `663ed44a12176d9d20dfa3c6e7536dd7c4a3cbb0615f8b5f7609f2e16d9f14a7`. The pre-existing 300-to-600-minute duration comparison still fails the 1% gate; the illustration remains an unresolved comparison setup, not a converged reference.
+The tutorial renderer was run from the saved 18,001-sample Bolivia trace and its receiver table using a temporary input copy that changes only the output prefix and source name to locate those saved files. The renderer now resolves the matching receiver row before choosing distance and units. The regenerated SVG is byte-identical to the tracked illustration (SHA-256 `4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b`); no saved waveform was changed. The current renderer hash is `c092e76167c90f15930535ccbd4c687955b2a50e15a030dd18d96159c790f636`. The pre-existing 300-to-600-minute duration comparison still fails the 1% gate; the illustration remains an unresolved comparison setup, not a converged reference.

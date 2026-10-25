@@ -30,7 +30,8 @@ SeismogramInput ReadSeismogramInput(const std::filesystem::path& path) {
     calculation.corrections = corrections->AsBool();
   }
 
-  input.receivers = ReadReceivers(json.At("receivers"), directory);
+  input.receivers = ReadReceivers(json.At("receivers"), directory,
+                                  shared.figure);
   return input;
 }
 
@@ -84,7 +85,8 @@ namespace {
 
 // A measurement: a traveltime on a component.
 KernelMeasurement ReadMeasurement(const Json& json, const Location& from,
-                                  const Location& at, double duration) {
+                                  const Location& at, double duration,
+                                  const HydrostaticFigure& figure) {
   Allow(json, {"name", "component", "traveltime"});
   auto measurement = KernelMeasurement{};
   const auto& component = json.At("component");
@@ -93,8 +95,8 @@ KernelMeasurement ReadMeasurement(const Json& json, const Location& from,
       Choice<Direction>(component, {{"Z", Along(Vertical)},
                                     {"N", Along(North)},
                                     {"E", Along(East)},
-                                    {"R", RadialDirection(from, at)},
-                                    {"T", TransverseDirection(from, at)}});
+                                    {"R", RadialDirection(from, at, figure)},
+                                    {"T", TransverseDirection(from, at, figure)}});
   const auto& traveltime = json.At("traveltime");
   Allow(traveltime, {"window_s", "taper_s"});
   const auto& window = traveltime.At("window_s");
@@ -223,12 +225,14 @@ KernelInput ReadKernelInput(const std::filesystem::path& path) {
   input.calculation.quantity = ReadQuantity(output, input.calculation.quantity);
 
   input.receiver =
-      ReadReceiver(json.At("receiver"), input.source.location, directory);
+      ReadReceiver(json.At("receiver"), input.source.location, directory,
+                   shared.figure);
   const auto& measurements = json.At("measurements");
   for (const auto& measurement : measurements.AsArray()) {
     auto read = ReadMeasurement(measurement, input.source.location,
                                 input.receiver.location,
-                                input.calculation.sampling.duration);
+                                input.calculation.sampling.duration,
+                                shared.figure);
     const auto* name = measurement.Find("name");
     read.name =
         name ? name->AsString() : std::to_string(input.measurements.size() + 1);

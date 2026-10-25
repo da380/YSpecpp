@@ -163,11 +163,12 @@ limits for each documented figure.
 
 The calculation is read from a JSON file:
 
-This root input uses the published DSpecM1D Bolivia comparison settings: PREM with ocean, no attenuation, full gravity, displacement, degrees 0–300, 1.5–21 mHz, a 300-minute record at 1 s, and the stated four-corner taper. Its source and receiver latitudes are geographic conversions of the comparison’s geocentric coordinates. Its duration check remains unresolved; the setup is not a converged reference.
+This root input uses the published DSpecM1D Bolivia comparison settings: PREM with ocean, no attenuation, full gravity, displacement, degrees 0–300, 1.5–21 mHz, a 300-minute record at 1 s, and the stated four-corner taper. It supplies the comparison’s geocentric latitudes directly with latitude correction disabled; the new model-derived default is documented separately. Its duration check remains unresolved; the setup is not a converged reference.
 
 ```json
 {
   "model": "prem.200",
+  "latitude_correction": false,
   "attenuation": false,
   "gravity": "full",
   "output": {
@@ -196,7 +197,7 @@ This root input uses the published DSpecM1D Bolivia comparison settings: PREM wi
   "sources": [
     {
       "depth_km": 647.1,
-      "latitude": -13.909919806613164,
+      "latitude": -13.82,
       "longitude": -67.25,
       "moment_tensor_Nm": {
         "rr": -7.59e+20,
@@ -212,7 +213,7 @@ This root input uses the published DSpecM1D Bolivia comparison settings: PREM wi
     "depth_km": 3.0,
     "locations": [
       [
-        80.06588632614357,
+        80.0,
         0.0
       ]
     ]
@@ -227,6 +228,16 @@ This root input uses the published DSpecM1D Bolivia comparison settings: PREM wi
   Relative paths, here and in `output.prefix`, are relative to the input
   file.
 - `attenuation`: whether to include attenuation (default `true`).
+- `latitude_correction`: whether source and receiver latitude values use the
+  model-derived first-order hydrostatic figure (default `true`). With the
+  correction enabled, supplied latitudes are geographic and are converted
+  using the model density and spin; set it to `false` when supplied latitudes
+  are already geocentric, using spherical geometry. Depth remains radial and
+  the local tensor/component bases are unchanged.
+- `rotation_rate_rad_s`: uniform rotation rate in rad/s used for the figure
+  (default `7.292115e-5`, the IAU nominal mean Earth angular velocity). This
+  is an input override for model-specific spin; with latitude correction off
+  the supplied coordinates remain geocentric.
 - `gravity`: `"none"`, `"cowling"` or `"full"` (default `"full"`).
 - `output.quantity`: `"displacement"`, `"velocity"` or `"acceleration"`
   (default displacement). `potential_and_tilt_corrections` applies to
@@ -268,7 +279,8 @@ This root input uses the published DSpecM1D Bolivia comparison settings: PREM wi
   part wraps round and reappears, amplified, at the end of the time series.
   A low ramp of 1 mHz or more, or a longer time series, keeps it out of the
   record.
-- `sources`: one or more, each with its hypocentre (geographic latitude) and
+- `sources`: one or more, each with its hypocentre (geographic latitude when
+  `latitude_correction` is enabled, geocentric latitude when it is off) and
   its moment tensor `moment_tensor_Nm`, a point force `force_N` (members
   `r`, `t`, `p`, each defaulting to zero), or both, in spherical coordinates
   at the source (r up, theta south, phi east), as a step at the origin time.
@@ -555,8 +567,11 @@ calculation.sampling = {.duration = 3600, .timeStep = 20};  // s
 
 const auto sources = std::vector<YSpec::Source>{
     {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e18}}};
-const auto receivers = std::vector<YSpec::Receiver>{
-    {.location = {0, 30}, .depth = 3e3}, {.location = {0, 60}, .depth = 3e3}};
+const auto figure = YSpec::FigureFor(model, calculation);
+const auto locations = YSpec::GreatCircle({0, 0}, 90, 30, 60, 2, figure);
+auto receivers = std::vector<YSpec::Receiver>{};
+for (const auto& location : locations)
+  receivers.push_back({.location = location, .depth = 3e3});
 
 const auto seismograms =
     YSpec::ComputeSeismograms(model, calculation, sources, receivers);
@@ -574,7 +589,11 @@ displacement, as strainmeters and fibre-optic cables record; strain and
 displacement satisfy reciprocity with each other to 1e-8, which the tests
 check. A receiver may carry an `Instrument`, read from a
 SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
-gives lines of receivers along great circles.
+gives lines of receivers along great circles. For a geographic path with the
+default corrected calculation, pass `YSpec::FigureFor(model, calculation)` to
+that helper; a model-less helper call uses spherical/geocentric coordinates.
+The same explicit figure is required for standalone `RadialDirection` and
+`TransverseDirection` helpers when matching a corrected calculation.
 
 `YSpec::ComputeRadialKernels` gives the sensitivity of a measurement on a
 seismogram to spherically symmetric perturbations of the model, by the adjoint
@@ -620,16 +639,17 @@ import yspec
 
 model = yspec.Model.prem()
 source = yspec.Source(
-    latitude=-13.909919806613164, longitude=-67.25, depth_km=647.1,
+    latitude=-13.82, longitude=-67.25, depth_km=647.1,
     moment_tensor=dict(rr=-7.59e20, rt=-2.5e21, rp=4.2e19,
                        tt=7.75e20, tp=-2.48e20, pp=-1.6e19),
     name="bolivia")
-receivers = [yspec.Receiver(latitude=80.06588632614357, longitude=0,
+receivers = [yspec.Receiver(latitude=80.0, longitude=0,
                             depth_km=3)]
 calculation = yspec.Calculation(
     degrees=(0, 300), frequencies_mhz=(1.5, 21), length_min=300,
     time_step_s=1, filter_mhz=(1.9, 2.0, 20.0, 20.1),
-    gravity="full", attenuation=False, quantity="displacement")
+    gravity="full", attenuation=False, quantity="displacement",
+    latitude_correction=False)
 seismograms = yspec.seismograms(model, calculation, source, receivers,
                                 progress=True)
 seismograms.time_s           # 18,001 samples, from 0 to 18,000 s

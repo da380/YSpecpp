@@ -37,6 +37,7 @@ function(yspec_add_slow_test name)
 endfunction()
 
 yspec_add_test(TestModel)
+yspec_add_test(TestHydrostaticFigure)
 yspec_add_test(TestNumerics)
 yspec_add_test(TestSolver)
 yspec_add_test(TestBoundaries)

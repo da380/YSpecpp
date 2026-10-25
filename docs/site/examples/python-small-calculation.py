@@ -15,9 +15,10 @@ calculation = yspec.Calculation(
     attenuation=False,
     quantity="displacement",
     tolerance=1e-5,
+    latitude_correction=False,
 )
 source = yspec.Source(
-    latitude=-13.909919806613164,
+    latitude=-13.82,
     longitude=-67.25,
     depth_km=647.1,
     moment_tensor={
@@ -31,7 +32,7 @@ source = yspec.Source(
     name="bolivia",
 )
 receiver = yspec.Receiver(
-    latitude=80.06588632614357, longitude=0.0, depth_km=3.0)
+    latitude=80.0, longitude=0.0, depth_km=3.0)
 result = yspec.seismograms(model, calculation, source, receiver, progress=True)
 
 assert result.data.shape == (1, 1, 3, 18001)

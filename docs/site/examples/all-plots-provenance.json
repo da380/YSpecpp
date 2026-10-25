@@ -13,26 +13,27 @@
         "examples/cross-section/run.sh"
       ],
       "runner": "examples/cross-section/run.sh",
-      "command": "plot snapshot snapshot.json --component up -o up.png",
+      "command": "python -m yspec.plot snapshot /tmp/yspecpp-phase2c-runs-20261023/cross-section/input.json --component up -o cross-up.png",
       "input_hashes": {
         "examples/cross-section/snapshot.json": "3bc1462dd6f5814fa03d6a0d0df08fe549b268bb7aa7f77f22f5bbbf1f722a26"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/snapshots.py",
-      "plotter_sha256": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
+      "plotter_sha256": "5963a0b511d4fcbe5b3d38b2b9cbcadc8dcce9686878e8ccd54c6b8da5e1e176",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
       "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md; PR5 P2 fixes uncommitted on 26e9ae1",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": null,
-        "evidence_path": "/tmp/yspecpp-pr5-p2-fixes-20261023/phase2c/cross-up.png",
-        "sha256": "cc174f61c4265382170c4af6c59684e1eeb3e8b191323c8f6f0a53702d333361",
+        "evidence_path": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/rendered/cross-up.png",
+        "sha256": "95a49551f571202ee89f443eff28270b28cc953ae6e199804eebf98e493312dd",
         "render_input": {
           "path": "/tmp/yspecpp-phase2c-runs-20261023/cross-section/input.json",
           "sha256": "3bc1462dd6f5814fa03d6a0d0df08fe549b268bb7aa7f77f22f5bbbf1f722a26",
           "note": "Saved-output rendering input with the model and output paths resolved in the evidence directory; no numerical samples were recomputed."
-        }
+        },
+        "note": "Cross-section slice rendered from the archived raw snapshot samples; metadata-free output is labelled as the historical Earth mapping."
       },
       "render_environment": {
         "python": "3.12.3",
@@ -71,26 +72,27 @@
         "examples/cross-section/run.sh"
       ],
       "runner": "examples/cross-section/run.sh",
-      "command": "plot snapshot snapshot.json --component away -o away.png",
+      "command": "python -m yspec.plot snapshot /tmp/yspecpp-phase2c-runs-20261023/cross-section/input.json --component away -o cross-away.png",
       "input_hashes": {
         "examples/cross-section/snapshot.json": "3bc1462dd6f5814fa03d6a0d0df08fe549b268bb7aa7f77f22f5bbbf1f722a26"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/snapshots.py",
-      "plotter_sha256": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
+      "plotter_sha256": "5963a0b511d4fcbe5b3d38b2b9cbcadc8dcce9686878e8ccd54c6b8da5e1e176",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
       "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md; PR5 P2 fixes uncommitted on 26e9ae1",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": null,
-        "evidence_path": "/tmp/yspecpp-pr5-p2-fixes-20261023/phase2c/cross-away.png",
-        "sha256": "7b5127189d8d28dcb0e97b70e20fc8e3ad693b70655f17e662c51679cd97de0d",
+        "evidence_path": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/rendered/cross-away.png",
+        "sha256": "30e7ce226e1faad0772579992a9ea056936b73f67ffaf39c26a4c2e85fa65070",
         "render_input": {
           "path": "/tmp/yspecpp-phase2c-runs-20261023/cross-section/input.json",
           "sha256": "3bc1462dd6f5814fa03d6a0d0df08fe549b268bb7aa7f77f22f5bbbf1f722a26",
           "note": "Saved-output rendering input with the model and output paths resolved in the evidence directory; no numerical samples were recomputed."
-        }
+        },
+        "note": "Cross-section slice rendered from the archived raw snapshot samples; metadata-free output is labelled as the historical Earth mapping."
       },
       "render_environment": {
         "python": "3.12.3",
@@ -131,7 +133,7 @@
       "runner": "examples/depths/run.sh",
       "command": "plot traces input.json --components ZRT -o depths.png",
       "input_hashes": {
-        "examples/depths/input.json": "efaa1358195b729668c74278cd719951c315dd3da71e43ec052a6d8d94bb171b"
+        "examples/depths/input.json": "0d51d0bef66ae39441281301a79bf7fb023e0c7dffa34fb7a97de96d439b7ee5"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
@@ -315,9 +317,9 @@
       "runner": "examples/gravity/run.sh",
       "command": "plot compare none.json cowling.json full.json --labels none Cowling full    --component Z -o gravity.png",
       "input_hashes": {
-        "examples/gravity/none.json": "070a8315492d94dfa1626f7f57daf6c4f11d5bce6c522dd59697f2f5d2879900",
-        "examples/gravity/cowling.json": "80df7a531c6eca2ea4e8860dd5af64a13dd13d2546e29b412be833e173fb0a85",
-        "examples/gravity/full.json": "ed948b1ec32bc1bec83353d7ef2c59d01f7bedb4c77e4f43ad78aba62fce53fc"
+        "examples/gravity/none.json": "14d393ce2e9e137ebb0cd38ab7fe6aee19d61633c331c61886a3a5af64537b49",
+        "examples/gravity/cowling.json": "efa0e64c71314f33c9891b9a5fb4a758553e9b62215a6acb8611d9545c7ab907",
+        "examples/gravity/full.json": "fdce8e043c79c91fac2c9ba6d41ed64e291f47241dfe1ee96fc8067eba77f6c1"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
@@ -374,7 +376,7 @@
       "runner": "examples/instrument/run.sh",
       "command": "plot traces input.json --receivers 1 2 --components ZRT -o station.png",
       "input_hashes": {
-        "examples/instrument/input.json": "1e1eaa507c2906cb99fcea4aa8bfb26c7d4c1a53be1b5445c0f4b647b687679b"
+        "examples/instrument/input.json": "0fda7664013eee0813a2b7da4a985f47c5a7ebd1f1b1a25c886188d344f6dd01"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
@@ -575,21 +577,22 @@
         "examples/kernels-3d/run.sh"
       ],
       "runner": "examples/kernels-3d/run.sh",
-      "command": "plot volume s-wave.json --parameter vs -o s-wave-volume.png",
+      "command": "CARTOPY_DATA_DIR=/tmp/yspecpp-cartopy-data-20261025 python -m yspec.plot volume /tmp/yspecpp-phase2c-runs-20261023/kernels-3d/input.json --measurement S --parameter vs -o volume.png",
       "input_hashes": {
         "examples/kernels-3d/s-wave.json": "6d6748e0ffb53d64ee2f9f56a083916a5b7df0be0bf12712971d0203fd718db7"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/volume.py",
-      "plotter_sha256": "183de7667e627a8a18cf3d9741adfc87f2266f7b24532422146ddc89c9bfb132",
+      "plotter_sha256": "319449b4779ca11c9797f6eaf9d1f9191269b8a66a33c8a56aa93934c6cb6dea",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
       "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": null,
-        "evidence_path": "/tmp/yspecpp-renderer-phase2b-20261023/phase2c/volume.png",
-        "sha256": "0719c2df2f899ec1a1efa0447b4202b2e47b5ab63e4759a613dc24ba47282ae4"
+        "evidence_path": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/rendered/volume.png",
+        "sha256": "19b36180804c728f8e4bcc7de6d6c3f11e262e6ec9d5ca9ec697c68081eba45f",
+        "note": "Volume kernels rendered from archived raw fields with the legacy Earth coordinate label and coastline display."
       },
       "render_environment": {
         "python": "3.12.3",
@@ -602,7 +605,9 @@
         "thread_limits": {
           "OMP_NUM_THREADS": 1,
           "OPENBLAS_NUM_THREADS": 1
-        }
+        },
+        "cartopy_data_dir": "/tmp/yspecpp-cartopy-data-20261025",
+        "cartopy_data_manifest_sha256": "b5c91c63c9cf0a7f3e7185dc7f06ff629b8d4539de020056aea79b4e385ec999"
       },
       "numerical_artifacts": {
         "directory": "/tmp/yspecpp-phase2c-runs-20261023/kernels-3d",
@@ -799,21 +804,22 @@
         "examples/map/run.sh"
       ],
       "runner": "examples/map/run.sh",
-      "command": "plot snapshot snapshot.json --component up -o map.png",
+      "command": "CARTOPY_DATA_DIR=/tmp/yspecpp-cartopy-data-20261025 python -m yspec.plot snapshot /tmp/yspecpp-phase2c-runs-20261023/map/input.json --component up -o map.png",
       "input_hashes": {
         "examples/map/snapshot.json": "2b8860698a2f252102ae0cb7c930229d6aca83ebf74faaa220a944526489c6a0"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "python/yspec/plot/snapshots.py",
-      "plotter_sha256": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
+      "plotter_sha256": "5963a0b511d4fcbe5b3d38b2b9cbcadc8dcce9686878e8ccd54c6b8da5e1e176",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
       "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": null,
-        "evidence_path": "/tmp/yspecpp-renderer-phase2b-20261023/phase2c/map.png",
-        "sha256": "2238f9bc2ec168bd57d42a928211b91f1aa95178c19ac396f4700089792de483"
+        "evidence_path": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/rendered/map.png",
+        "sha256": "a176b66739aa2c77a69dddb737a250e379c430649c726ec39e75499fbb517295",
+        "note": "Map rendered from the archived raw snapshot samples with the saved geographic coordinates and coastline display; metadata-free output is labelled as the historical Earth mapping."
       },
       "render_environment": {
         "python": "3.12.3",
@@ -826,7 +832,9 @@
         "thread_limits": {
           "OMP_NUM_THREADS": 1,
           "OPENBLAS_NUM_THREADS": 1
-        }
+        },
+        "cartopy_data_dir": "/tmp/yspecpp-cartopy-data-20261025",
+        "cartopy_data_manifest_sha256": "b5c91c63c9cf0a7f3e7185dc7f06ff629b8d4539de020056aea79b4e385ec999"
       },
       "numerical_artifacts": {
         "directory": "/tmp/yspecpp-phase2c-runs-20261023/map",
@@ -854,7 +862,7 @@
       "runner": "examples/record-section/run.sh",
       "command": "plot section input.json --component Z --gain 2 -o vertical.png",
       "input_hashes": {
-        "examples/record-section/input.json": "950ad80c03e6aff3e838efa9e1a2749fa63f3a26786693dcff824238a22f618b"
+        "examples/record-section/input.json": "04d976d78ee30188cb704acf23750ba61aa3d159df7db6b7ce931607bf0cd3d6"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
@@ -936,7 +944,7 @@
       "runner": "examples/record-section/run.sh",
       "command": "plot section input.json --component T --gain 2 -o transverse.png",
       "input_hashes": {
-        "examples/record-section/input.json": "950ad80c03e6aff3e838efa9e1a2749fa63f3a26786693dcff824238a22f618b"
+        "examples/record-section/input.json": "04d976d78ee30188cb704acf23750ba61aa3d159df7db6b7ce931607bf0cd3d6"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
@@ -1017,24 +1025,25 @@
       "runner": "docs/site/examples/plot_first_seismogram.py",
       "command": null,
       "input_hashes": {
-        "docs/site/examples/first-seismogram.json": "ce09532d22437c8e3266ff855f83dd05e039328bd2fe116522aa8ccf87ac7ab3"
+        "docs/site/examples/first-seismogram.json": "349a11a2a3b877424e5ac994c830318fb44a029d53ccadcd9c9aafdf8a6f6232"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
       "plotter_source": "docs/site/examples/plot_first_seismogram.py",
-      "plotter_sha256": "663ed44a12176d9d20dfa3c6e7536dd7c4a3cbb0615f8b5f7609f2e16d9f14a7",
+      "plotter_sha256": "c092e76167c90f15930535ccbd4c687955b2a50e15a030dd18d96159c790f636",
       "source_base_revision": "a294fb321cbcf9b6736710eb7ebdcec2c694dc5c",
       "worktree_changes": "Phase 2A/2B/2C are uncommitted; see implementation_status.md; PR5 P2 fixes uncommitted on 26e9ae1",
       "render_status": "rendered",
       "render_output": {
         "tracked_path": "docs/site/assets/first-seismogram.svg",
-        "evidence_path": "/tmp/yspecpp-pr5-p2-fixes-20261023/first-seismogram.svg",
+        "evidence_path": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/rendered/first-seismogram.svg",
         "sha256": "4b9dfc1c8d3f88d002b3f5444de6eb12f41e521532e389bed79aa1720da5e35b",
         "render_input": {
-          "path": "/tmp/yspecpp-pr5-p2-fixes-20261023/first-seismogram-render.json",
-          "sha256": "157a189282b441753ebfd6573b4bdfa4abf6a8ffc46ca5e07a48c0a2b19cba9a",
-          "note": "Renderer copy changes only the output prefix and source name to match the saved trace; physics match the canonical fixture."
-        }
+          "path": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/bolivia-off/input.json",
+          "sha256": "349a11a2a3b877424e5ac994c830318fb44a029d53ccadcd9c9aafdf8a6f6232",
+          "note": "Off-mode Bolivia input matching the archived baseline trace and saved receiver geometry."
+        },
+        "note": "Regenerated from the saved geocentric/off Bolivia trace, byte-identical to the archived YSpec baseline; SVG is unchanged."
       },
       "render_environment": {
         "python": "3.12.3",
@@ -1050,12 +1059,12 @@
         }
       },
       "numerical_artifacts": {
-        "directory": "/tmp/yspecpp-phase2a-bolivia-20261023/base60",
+        "directory": "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/bolivia-off",
         "files": {
-          "bolivia.out.1": "196c82b1f2ef926146fe5b32e219891374a4af632e75886e52353214f91d7021",
-          "bolivia.out.receivers": "177529bdac3d900b3706b4724938181294425c0769b73e14d615649e6bb1d41b"
+          "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/bolivia-off/first-seismogram.out.1": "196c82b1f2ef926146fe5b32e219891374a4af632e75886e52353214f91d7021",
+          "/tmp/yspecpp-ellipticity-evidence-20261025/implementation/bolivia-off/first-seismogram.out.receivers": "ed6836d917cd72e276135219aa88f68f173364517a04900c83f18b45b90909c2"
         },
-        "note": "Current Bolivia baseline; renderer-only JSON adjusted output prefix/source name to match saved filenames. Current PR5 P2 render reads this saved trace and receiver table through a path-adjusted input copy."
+        "note": "Geocentric/off Bolivia rerun after preserving the receiver table’s one-comment schema contract; the trace is byte-identical to the archived YSpec baseline used by the current illustration, and the receiver header appends figure metadata after `|`."
       },
       "scientific_status": "duration gate failed; not a converged reference",
       "phase1_status": "needs correction",
@@ -1070,7 +1079,7 @@
       "runner": "python/yspec/plot/seismograms.py",
       "command": null,
       "input_hashes": {
-        "docs/site/examples/first-seismogram.json": "ce09532d22437c8e3266ff855f83dd05e039328bd2fe116522aa8ccf87ac7ab3"
+        "docs/site/examples/first-seismogram.json": "349a11a2a3b877424e5ac994c830318fb44a029d53ccadcd9c9aafdf8a6f6232"
       },
       "model": "examples/prem.200",
       "model_sha256": "4c3c53ca04e785ff4fd853cf211fe94e353ef70d6052a526122d0f279a3519ea",
@@ -1224,10 +1233,15 @@
     "python/yspec/plot/_labels.py": "39ecbede9900941fe68faa4b28effcd55d8f34f3c8ab9771c34de98f30d15e92",
     "python/yspec/plot/cli.py": "4ec1b3687dfcd3185279ba912a6ec7168e17919a5b153a269d1f92824e97e009",
     "python/yspec/plot/kernels.py": "ebf0b79a4a2787aef2d2450e5ba9e50b153643a8c70de1873d19a92a1801d6db",
-    "python/yspec/plot/runs.py": "1ba39fca6ce2a20e02b4e8aeba65f1587784ec29a36213502a0b352ec7d92871",
+    "python/yspec/plot/runs.py": "55e4627603b8ef3f60c0952236296fb74c9a321f47b5782a170e24a931a1512d",
     "python/yspec/plot/sections.py": "bb9e1cbfa1483377fc648cd03f48c0c22453da2d8fa0f6c315b81b98ebc5e762",
     "python/yspec/plot/seismograms.py": "aac9a45d7ffbc166d97dc42c1536870248bca817c88bcd110fecf98899fe0b5e",
-    "python/yspec/plot/snapshots.py": "18eca6fc97639f8fd0d4554ce679b4ceca609cde6e09a50444d868712d37a6f7",
-    "python/yspec/plot/volume.py": "183de7667e627a8a18cf3d9741adfc87f2266f7b24532422146ddc89c9bfb132"
+    "python/yspec/plot/snapshots.py": "5963a0b511d4fcbe5b3d38b2b9cbcadc8dcce9686878e8ccd54c6b8da5e1e176",
+    "python/yspec/plot/volume.py": "319449b4779ca11c9797f6eaf9d1f9191269b8a66a33c8a56aa93934c6cb6dea"
+  },
+  "coordinate_figure_campaign_2026_10_25": {
+    "scope": "Retain saved historical numerical artifacts and their recorded coordinate mapping for existing illustrations, except the verified Bolivia geocentric/off rerun; rerender only displays affected by coordinate metadata/labels.",
+    "not_claimed": "The 21 numerical examples were not all rerun under the newly computed default figure.",
+    "hash_interpretation": "Input and source hashes describe current recipes and renderers; numerical_artifacts paths and hashes identify saved numerical output provenance. \u201cCurrent\u201d in Phase 2C notes means current to that earlier plotting campaign."
   }
 }

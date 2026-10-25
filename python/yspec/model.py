@@ -91,3 +91,11 @@ class Model:
                                values["rho"])
         values["vs"] = np.sqrt(values["mu"] / values["rho"])
         return values
+
+    def figure(self, rotation_rate_rad_s=_core.EARTH_ROTATION_RATE,
+               latitude_correction=True):
+        """Return this model's first-order hydrostatic figure."""
+        if not latitude_correction:
+            return _core.HydrostaticFigure.spherical(rotation_rate_rad_s)
+        return _core.HydrostaticFigure.from_model(
+            self._model, rotation_rate_rad_s)

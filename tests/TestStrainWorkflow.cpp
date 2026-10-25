@@ -37,15 +37,16 @@ double Peak(std::span<const double> trace) {
       trace | std::views::transform([](double x) { return std::abs(x); }));
 }
 
-// The geographic latitude of a geocentric one, both in degrees, as the
-// geometry converts them.
-double Geographic(double geocentric) {
-  return std::atan(std::tan(geocentric * kDegree) / 0.993277) / kDegree;
+// Convert the finite-difference stencil's geocentric locations to the
+// geographic coordinates consumed by model-aware geometry.
+double Geographic(double geocentric, const HydrostaticFigure& figure) {
+  return figure.GeographicLatitude(geocentric);
 }
 
 TEST(Strain, IsTheGradientOfTheDisplacement) {
   const auto model = Model::ReadDeck(kPrem);
   const auto calculation = Small();
+  const auto figure = FigureFor(model, calculation);
   const auto sources = std::vector<Source>{
       {{10, 20},
        30e3,
@@ -62,7 +63,7 @@ TEST(Strain, IsTheGradientOfTheDisplacement) {
   const auto h = 1e-4;    // radians
   const auto dr = 500.0;  // m
   auto at = [&](double dLatitude, double dLongitude, double dDepth) {
-    return Receiver{{Geographic(latitude + dLatitude / kDegree),
+      return Receiver{{Geographic(latitude + dLatitude / kDegree, figure),
                      longitude + dLongitude / kDegree},
                     depth + dDepth};
   };

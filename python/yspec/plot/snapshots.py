@@ -18,7 +18,7 @@ from planetmodel.deck import MINEOS, read_deck
 from planetmodel.plotting import colour_scale, section
 from planetmodel.slices import SectionSlice, Shown, SliceLayer
 
-from .runs import DIMENSIONS
+from .runs import DIMENSIONS, coordinate_label
 from ._labels import clipping_stats
 
 #: The guides drawn at the boundaries between solid and fluid, over the
@@ -246,7 +246,7 @@ def snapshots(run, component="up", *, common=False, clip=99.5,
             ax.set_title(f"{time:g} s")
         elif is_map:
             mesh = _draw_map(ax, run, field, projection, limits, cmap,
-                             coastlines)
+                             coastlines and run.latitude_correction)
             mappable = mesh
             ax.set_title(f"{time:g} s, {run.depths[0]:g} km deep")
         else:
@@ -280,7 +280,9 @@ def snapshots(run, component="up", *, common=False, clip=99.5,
         "are not interpolated."
         if is_map else "")
     if is_section or is_map:
-        fig.suptitle(f"{shown.label}, source {run.source}",
+        coordinate_note = coordinate_label(run)
+        fig.suptitle(f"{shown.label}, source {run.source} "
+                     f"({coordinate_note})",
                      y=0.995 if is_section else 0.98)
         caption = textwrap.fill(f"{scaling}. {display_note}", width=58)
         fig.text(0.5, 0.955 if is_section else 0.965, caption,

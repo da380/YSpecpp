@@ -10,7 +10,10 @@ def test_seismograms_are_those_of_an_input_file(model, deck, source,
                                                 calculation, tmp_path):
     receivers = [yspec.Receiver(10.0, 80.0, depth_km=3),
                  *yspec.great_circle(source, azimuth_deg=60,
-                                     distances_deg=[40])]
+                                     distances_deg=[40],
+                                     figure=model.figure(
+                                         calculation.rotation_rate_rad_s,
+                                         calculation.latitude_correction))]
     ours = yspec.seismograms(model, calculation, source, receivers)
 
     members = shared_members(deck, str(tmp_path / "out"))
@@ -30,8 +33,13 @@ def test_seismograms_are_those_of_an_input_file(model, deck, source,
 
 
 def test_rotation_keeps_the_horizontal_motion(model, source, calculation):
+    from yspec.places import _location
+
     receivers = yspec.great_circle(source, azimuth_deg=30,
-                                   distances_deg=[20, 70])
+                                   distances_deg=[20, 70],
+                                   figure=model.figure(
+                                       calculation.rotation_rate_rad_s,
+                                       calculation.latitude_correction))
     seismograms = yspec.seismograms(model, calculation, source, receivers)
     turned = seismograms.rotated()
     horizontal = np.hypot(seismograms.data[:, :, 1], seismograms.data[:, :, 2])
@@ -40,6 +48,40 @@ def test_rotation_keeps_the_horizontal_motion(model, source, calculation):
     np.testing.assert_array_equal(turned[:, :, 0], seismograms.data[:, :, 0])
     np.testing.assert_allclose(seismograms.trace("T", receiver=1),
                                turned[0, 1, 2])
+    on = model.figure(calculation.rotation_rate_rad_s,
+                      calculation.latitude_correction)
+    off = model.figure(calculation.rotation_rate_rad_s, False)
+    a, b = _location(source), _location(receivers[1])
+    expected = _core.radial_direction(a, b, on)
+    wrong = _core.radial_direction(a, b, off)
+    np.testing.assert_allclose(
+        seismograms.trace("R", receiver=1),
+        expected.north * seismograms.data[0, 1, 1]
+        + expected.east * seismograms.data[0, 1, 2],
+        rtol=1e-7, atol=1e-12 * horizontal.max())
+    assert not np.allclose(
+        seismograms.trace("R", receiver=1),
+        wrong.north * seismograms.data[0, 1, 1]
+        + wrong.east * seismograms.data[0, 1, 2], rtol=0, atol=1e-14)
+    stream = seismograms.to_obspy(rotate=True)
+    np.testing.assert_allclose(stream[4].data, turned[0, 1, 1])
+
+
+def test_four_argument_seismograms_constructor_uses_spherical_geometry(
+        model, source, calculation):
+    from yspec.seismograms import Seismograms
+    from yspec.places import _location
+
+    receiver = yspec.Receiver(25.0, 40.0, depth_km=3)
+    result = yspec.seismograms(model, calculation, source, receiver)
+    compatible = Seismograms(result._core, result.sources, result.receivers,
+                             result.quantity)
+    figure = _core.HydrostaticFigure.spherical()
+    direction = _core.radial_direction(_location(source), _location(receiver),
+                                       figure)
+    expected = (direction.north * compatible.data[0, 0, 1]
+                + direction.east * compatible.data[0, 0, 2])
+    np.testing.assert_allclose(compatible.trace("R"), expected)
 
 
 def test_strains_have_six_components(model, source, calculation):

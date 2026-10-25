@@ -15,12 +15,22 @@ namespace {
 using namespace YSpec;
 namespace fs = std::filesystem;
 
+constexpr Calculation kLegacyAggregateCalculation{
+    Gravity::Cowling, false, Quantity::Displacement, false, {}, {}, {},
+    std::nullopt, {}, true, EarthRotationRate};
+static_assert(kLegacyAggregateCalculation.gravity == Gravity::Cowling);
+static_assert(!kLegacyAggregateCalculation.attenuation);
+static_assert(Calculation{}.latitudeCorrection);
+static_assert(Calculation{}.rotationRate == EarthRotationRate);
+
 const auto kExample = fs::path(YSPEC_EXAMPLES_DIR) / "input.json";
 
 // Writes a document to a file of its own and returns the path.
 fs::path Write(const std::string& name, const std::string& text) {
   const auto directory = fs::temp_directory_path() / "yspec-input-tests";
   fs::create_directories(directory);
+  fs::copy_file(kExample.parent_path() / "prem.200", directory / "prem.200",
+                fs::copy_options::overwrite_existing);
   const auto path = directory / name;
   std::ofstream(path) << text;
   return path;
@@ -67,7 +77,7 @@ TEST(Input, ReadsTheExample) {
   EXPECT_DOUBLE_EQ(c.taper->f4, 20.1e-3);
   ASSERT_EQ(input.sources.size(), 1u);
   EXPECT_DOUBLE_EQ(input.sources[0].depth, 647.1e3);
-  EXPECT_DOUBLE_EQ(input.sources[0].location.latitude, -13.909919806613164);
+  EXPECT_DOUBLE_EQ(input.sources[0].location.latitude, -13.82);
   EXPECT_DOUBLE_EQ(input.sources[0].location.longitude, -67.25);
   EXPECT_DOUBLE_EQ(input.sources[0].moment.rr, -7.59e20);
   EXPECT_DOUBLE_EQ(input.sources[0].moment.rt, -2.5e21);
@@ -77,7 +87,8 @@ TEST(Input, ReadsTheExample) {
   EXPECT_DOUBLE_EQ(input.sources[0].moment.pp, -1.6e19);
   EXPECT_EQ(input.names, std::vector<std::string>{"1"});
   ASSERT_EQ(input.receivers.size(), 1u);
-  EXPECT_DOUBLE_EQ(input.receivers[0].location.latitude, 80.06588632614357);
+  EXPECT_DOUBLE_EQ(input.receivers[0].location.latitude, 80.0);
+  EXPECT_FALSE(input.calculation.latitudeCorrection);
   EXPECT_DOUBLE_EQ(input.receivers[0].location.longitude, 0);
   EXPECT_DOUBLE_EQ(input.receivers[0].depth, 3e3);
 }
@@ -92,6 +103,16 @@ TEST(Input, AppliesTheDefaults) {
   EXPECT_EQ(c.degrees.min, 0);
   EXPECT_FALSE(c.taper.has_value());
   EXPECT_EQ(c.solver.tolerance, SolverOptions{}.tolerance);
+  EXPECT_TRUE(c.latitudeCorrection);
+  EXPECT_DOUBLE_EQ(c.rotationRate, EarthRotationRate);
+}
+
+TEST(Input, ReadsFigureSettingsAndAllowsGeocentricCoordinates) {
+  const auto text = Document(
+      R"( "latitude_correction": false, "rotation_rate_rad_s": 0,)" );
+  const auto input = ReadSeismogramInput(Write("spherical.json", text));
+  EXPECT_FALSE(input.calculation.latitudeCorrection);
+  EXPECT_DOUBLE_EQ(input.calculation.rotationRate, 0);
 }
 
 TEST(Input, ReadsSeveralNamedSources) {
@@ -191,7 +212,9 @@ TEST(Input, ReadsGroupsOfReceivers) {
   ASSERT_TRUE(receivers[7].instrument.has_value());
   EXPECT_EQ(receivers[7].instrument->poles.size(), 1u);
   // The profile at an azimuth.
-  const auto profile = GreatCircle({10, 20}, 90, 10, 30, 3);
+  const auto model = Model::ReadDeck(input.model);
+  const auto figure = FigureFor(model, input.calculation);
+  const auto profile = GreatCircle({10, 20}, 90, 10, 30, 3, figure);
   for (auto i : {0, 1, 2}) {
     EXPECT_EQ(receivers[11 + i].location.latitude, profile[i].latitude);
     EXPECT_EQ(receivers[11 + i].location.longitude, profile[i].longitude);

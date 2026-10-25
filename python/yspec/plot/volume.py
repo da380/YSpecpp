@@ -15,16 +15,21 @@ from planetmodel.slices import Shown, sphere
 from .kernels import _kernel_unit
 from ._labels import clipping_stats
 from .snapshots import STAR
+from .runs import coordinate_label
 
 #: The mark of the receiver.
 TRIANGLE = {"marker": "v", "color": "white", "markeredgecolor": "k",
             "markersize": 9, "zorder": 4}
 
 
-def _unit(latitude, longitude):
+def _unit(latitude, longitude, surface_ellipticity):
     """The unit vector of a geographic latitude and longitude (degrees), at
     its geocentric latitude, as YSpec places it."""
-    theta = math.pi / 2 - math.atan(0.993277 * math.tan(math.radians(latitude)))
+    ratio = 1 - 2 * surface_ellipticity
+    geographic = math.radians(latitude)
+    geocentric = math.atan2(ratio * math.sin(geographic),
+                            math.cos(geographic))
+    theta = math.pi / 2 - geocentric
     phi = math.radians(longitude)
     return np.array([math.sin(theta) * math.cos(phi),
                      math.sin(theta) * math.sin(phi), math.cos(theta)])
@@ -34,11 +39,12 @@ def _spherical(x):
     return math.acos(max(-1.0, min(1.0, x[2]))), math.atan2(x[1], x[0])
 
 
-def _geographic_great_circle(source, receiver, samples=361):
+def _geographic_great_circle(source, receiver, surface_ellipticity,
+                             samples=361):
     """Geographic coordinates of the great circle used by YSpec's field
     grid, sampled from the source to the receiver."""
-    s = _unit(*source)
-    r = _unit(*receiver)
+    s = _unit(*source, surface_ellipticity)
+    r = _unit(*receiver, surface_ellipticity)
     normal = np.cross(s, r)
     sine = np.linalg.norm(normal)
     cosine = float(np.dot(s, r))
@@ -55,17 +61,19 @@ def _geographic_great_circle(source, receiver, samples=361):
                   + np.sin(fraction * distance)[:, None]
                   * np.cross(normal, s))
     geocentric = np.arcsin(np.clip(points[:, 2], -1.0, 1.0))
+    ratio = 1 - 2 * surface_ellipticity
     latitude = np.degrees(np.arctan2(np.sin(geocentric),
-                                     0.993277 * np.cos(geocentric)))
+                                     ratio * np.cos(geocentric)))
     longitude = np.degrees(np.unwrap(np.arctan2(points[:, 1], points[:, 0])))
     return longitude, latitude
 
 
-def _geographic_slice(slice_):
+def _geographic_slice(slice_, surface_ellipticity):
     """Adapt a model slice's geocentric grid to the geographic map CRS."""
     geocentric = 90.0 - np.degrees(slice_.grid.colatitudes)
-    geographic = np.degrees(np.arctan(
-        np.tan(np.radians(geocentric)) / 0.993277))
+    ratio = 1 - 2 * surface_ellipticity
+    geographic = np.degrees(np.arctan2(np.sin(np.radians(geocentric)),
+                                        ratio * np.cos(np.radians(geocentric))))
     grid = AngularGrid(np.radians(90.0 - geographic),
                        slice_.grid.longitudes, kind="custom")
     return replace(slice_, grid=grid)
@@ -121,8 +129,9 @@ def volume_kernels(run, parameter=None, depths=(100, 500, 1500, 2500),
     field = f"K_{parameter}"
     source = run.hypocentre
     receiver = run.receiver_location
-    s = _unit(source["latitude"], source["longitude"])
-    r = _unit(*receiver)
+    figure = run.surface_ellipticity
+    s = _unit(source["latitude"], source["longitude"], figure)
+    r = _unit(*receiver, figure)
     start, azimuth, length, at_source, at_receiver = _arc(
         s, r, math.radians(margin))
     surface = float(model.skeleton.boundaries[-1])
@@ -150,17 +159,21 @@ def volume_kernels(run, parameter=None, depths=(100, 500, 1500, 2500),
     ax.set_xticks([])
     ax.set_yticks([])
     measured = run.description.removeprefix("radial kernels of ")
+    coordinate_note = coordinate_label(run)
     fig.suptitle(f"The kernel of {'ln ' if run.relative else ''}{parameter} "
                  f"for {measured}, on the great circle through the source "
-                 f"(star) and the receiver (triangle), and at depths;\n"
+                 f"(star) and the receiver (triangle), and at depths "
+                 f"({coordinate_note});\n"
                  f"colours clipped at the {clip:g}th percentile", fontsize=10)
 
     # The maps are of the hemisphere centred on the middle of the path.
     middle = (s + r) / np.linalg.norm(s + r)
     theta, phi = _spherical(middle)
     geocentric_middle = 90.0 - math.degrees(theta)
-    geographic_middle = math.degrees(math.atan(
-        math.tan(math.radians(geocentric_middle)) / 0.993277))
+    ratio = 1 - 2 * figure
+    geographic_middle = math.degrees(math.atan2(
+        math.sin(math.radians(geocentric_middle)),
+        ratio * math.cos(math.radians(geocentric_middle))))
     projection = ccrs.Orthographic(central_longitude=math.degrees(phi),
                                    central_latitude=geographic_middle)
     for j, depth in enumerate(depths):
@@ -170,12 +183,12 @@ def volume_kernels(run, parameter=None, depths=(100, 500, 1500, 2500),
         except ValueError:
             # On a discontinuity: the side above it.
             cut = sphere(model, field, depth=depth * 1e3, side="above")
-        cut = _geographic_slice(replace(cut, shown=shown))
+        cut = _geographic_slice(replace(cut, shown=shown), figure)
         mesh = sphere_map(ax, cut, diverging=True, clip=clip,
-                          coastlines=True, colorbar=True)
+                          coastlines=run.latitude_correction, colorbar=True)
         _annotate(ax, cut.values, mesh)
         path_lon, path_lat = _geographic_great_circle(
-            (source["latitude"], source["longitude"]), receiver)
+            (source["latitude"], source["longitude"]), receiver, figure)
         ax.plot(path_lon, path_lat, color="k", lw=0.6,
                 transform=ccrs.PlateCarree())
         ax.plot(source["longitude"], source["latitude"],

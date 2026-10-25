@@ -47,13 +47,17 @@ if input_path is not None:
     if receiver_table.exists():
         lines = [line.split() for line in receiver_table.read_text().splitlines()
                  if line.strip()]
-        header = lines[0][1:] if lines and lines[0][0] == '#' else []
+        header = (lines[0][1:lines[0].index('|')]
+                  if lines and lines[0][0] == '#' and '|' in lines[0]
+                  else lines[0][1:] if lines and lines[0][0] == '#' else [])
         if 'file' not in header or 'source' not in header:
             raise SystemExit(f'{receiver_table}: missing receiver table header')
         file_column, source_column = header.index('file'), header.index('source')
         distance_column = (header.index('distance_deg')
                            if 'distance_deg' in header else None)
-        receiver_rows = lines[1:]
+        receiver_rows = [line.split() for line in
+                         receiver_table.read_text().splitlines()
+                         if line.strip() and not line.startswith('#')]
         matching = [row for row in receiver_rows
                     if len(row) > max(file_column, source_column) and
                     (output_prefix.parent / row[file_column]).resolve() ==
@@ -109,7 +113,8 @@ else:
         lines = [line.split() for line in receiver_table.read_text().splitlines()
                  if line.strip()]
         if lines and lines[0][0] == '#':
-            header = lines[0][1:]
+            header = (lines[0][1:lines[0].index('|')]
+                      if '|' in lines[0] else lines[0][1:])
             if 'file' in header and 'distance_deg' in header:
                 file_column, distance_column = (header.index('file'),
                                                 header.index('distance_deg'))
