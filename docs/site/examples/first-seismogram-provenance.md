@@ -27,7 +27,7 @@ for the newly computed default figure.
 The records in this section describe the earlier 91-row, 20-second illustration;
 they are historical and are not the provenance for the current SVG.
 
-- Code revision: `9552d2bde73b11551027fb829b17d7b4813253d9` (`docs/phase1-user-guide`; documentation changes were uncommitted during the run).
+- Code revision: `9552d2bde73b11551027fb829b17d7b4813253d9` (documentation changes were uncommitted during the run).
 - Platform/compiler: Ubuntu 24.04; GCC 13.3.0 (`g++-13`).
 - Build: CMake 3.28.3, Release, `YSPEC_BUILD_TESTS=OFF`, OpenMP enabled; two build jobs. Five dependencies were selected from the existing read-only cache via explicit source-directory overrides; planetmodel was fetched at its pinned SHA. This was not a cold-network configure.
 - FFTW: 3.3.10, with single-, double- and long-double components found.

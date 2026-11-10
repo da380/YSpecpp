@@ -14,7 +14,7 @@
  *
  * The integration starts at the deepest point at which the solution can
  * matter: below the turning point of the slowest wave at the given degree and
- * frequency, beneath the deepest source, the solution decays, and the WKB
+ * frequency, beneath the deepest source, the solution decays, and the JWKB
  * estimate of that decay is accumulated downwards until it reaches a given
  * number of e-folds. The response at a receiver below the start is taken to
  * be zero, to the same accuracy.
