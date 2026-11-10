@@ -1,11 +1,11 @@
 #!/bin/sh
-# The three-dimensional kernel of an S-wave traveltime at 60 degrees, measured
-# by cross-correlation on the transverse component, relative, in the
-# isotropic speeds and quality factors at fixed density: on a section along
-# the great circle through the source and the receiver, where it is the
-# banana of finite-frequency theory, and on maps at four depths, where its
-# Fresnel zones lie along the path. About a minute on four threads; the
-# kernels are written as a planetmodel model file, s-wave.nc.
+# A three-dimensional kernel for the named transverse cross-correlation
+# window at 60 degrees (1000–1200 s). Direct S, sS and ScS all fall in that
+# window, so this is a mixed packet rather than an isolated S sensitivity.
+# The relative isotropic speed and inverse-Q fields at fixed density are
+# drawn on an along-path section and on maps at four depths. Kernel and grid
+# convergence remain unverified. The kernels are written as the planetmodel
+# file s-wave.nc; runtime depends on the requested mesh and build.
 set -e
 cd "$(dirname "$0")"
 . ../common.sh

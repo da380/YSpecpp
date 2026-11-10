@@ -13,14 +13,17 @@ namespace {
 using Sphere::Degree;
 using Sphere::Vector;
 
-Vector UnitVector(const Location& location) {
-  return Sphere::Unit(Sphere::Colatitude(location.latitude),
-                      location.longitude * Degree);
+Vector UnitVector(const Location& location, const HydrostaticFigure& figure) {
+  return Sphere::Unit(
+      Sphere::Colatitude(figure.GeocentricLatitude(location.latitude)),
+      location.longitude * Degree);
 }
 
-Location ToLocation(const Vector& x) {
+Location ToLocation(const Vector& x, const HydrostaticFigure& figure) {
   const auto theta = std::atan2(std::hypot(x[0], x[1]), x[2]);
-  return {Sphere::Latitude(theta), std::atan2(x[1], x[0]) / Degree};
+  auto place = Location{0, std::atan2(x[1], x[0]) / Degree};
+  place.latitude = figure.GeographicLatitude(90 - theta / Degree);
+  return place;
 }
 
 Vector Combine(double a, const Vector& x, double b, const Vector& y) {
@@ -36,10 +39,11 @@ double Fraction(std::size_t i, std::size_t count) {
 }  // namespace
 
 std::vector<Location> GreatCircle(const Location& from, const Location& to,
-                                  std::size_t count) {
+                                  std::size_t count,
+                                  const HydrostaticFigure& figure) {
   if (count == 0) throw std::invalid_argument("a profile needs a point");
-  const auto a = UnitVector(from);
-  const auto b = UnitVector(to);
+  const auto a = UnitVector(from, figure);
+  const auto b = UnitVector(to, figure);
   const auto cross =
       std::hypot(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
                  a[0] * b[1] - a[1] * b[0]);
@@ -59,7 +63,7 @@ std::vector<Location> GreatCircle(const Location& from, const Location& to,
     // Spherical linear interpolation.
     const auto t = Fraction(i, count);
     points.push_back(ToLocation(
-        Combine(std::sin((1 - t) * delta), a, std::sin(t * delta), b)));
+        Combine(std::sin((1 - t) * delta), a, std::sin(t * delta), b), figure));
   }
   // The ends exactly as given.
   points.front() = from;
@@ -67,11 +71,18 @@ std::vector<Location> GreatCircle(const Location& from, const Location& to,
   return points;
 }
 
+std::vector<Location> GreatCircle(const Location& from, const Location& to,
+                                  std::size_t count) {
+  return GreatCircle(from, to, count, HydrostaticFigure::Spherical());
+}
+
 std::vector<Location> GreatCircle(const Location& from, double azimuth,
                                   double minDistance, double maxDistance,
-                                  std::size_t count) {
+                                  std::size_t count,
+                                  const HydrostaticFigure& figure) {
   if (count == 0) throw std::invalid_argument("a profile needs a point");
-  const auto theta = Sphere::Colatitude(from.latitude);
+  const auto theta =
+      Sphere::Colatitude(figure.GeocentricLatitude(from.latitude));
   const auto phi = from.longitude * Degree;
   const auto x = Sphere::Unit(theta, phi);
   // North and east at the starting point.
@@ -88,10 +99,17 @@ std::vector<Location> GreatCircle(const Location& from, double azimuth,
       points.push_back(from);
       continue;
     }
-    points.push_back(
-        ToLocation(Combine(std::cos(delta), x, std::sin(delta), heading)));
+    points.push_back(ToLocation(
+        Combine(std::cos(delta), x, std::sin(delta), heading), figure));
   }
   return points;
+}
+
+std::vector<Location> GreatCircle(const Location& from, double azimuth,
+                                  double minDistance, double maxDistance,
+                                  std::size_t count) {
+  return GreatCircle(from, azimuth, minDistance, maxDistance, count,
+                     HydrostaticFigure::Spherical());
 }
 
 }  // namespace YSpec

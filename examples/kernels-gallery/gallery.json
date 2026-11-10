@@ -38,7 +38,7 @@
     }
   ],
   "receiver": {
-    "depth_km": 3,
+    "depth_km": 3.0,
     "distance_deg": 60.0,
     "azimuth_deg": 70.0
   },
@@ -48,7 +48,7 @@
       "component": "Z",
       "traveltime": {
         "window_s": [
-          578,
+          577,
           640
         ],
         "taper_s": 12.5
@@ -60,7 +60,7 @@
       "traveltime": {
         "window_s": [
           710,
-          773
+          772
         ],
         "taper_s": 12.5
       }
@@ -70,8 +70,8 @@
       "component": "T",
       "traveltime": {
         "window_s": [
-          1070,
-          1132
+          1069,
+          1131
         ],
         "taper_s": 12.5
       }
@@ -81,8 +81,8 @@
       "component": "T",
       "traveltime": {
         "window_s": [
-          1167,
-          1229
+          1166,
+          1228
         ],
         "taper_s": 12.5
       }
@@ -92,8 +92,8 @@
       "component": "T",
       "traveltime": {
         "window_s": [
-          1310,
-          1372
+          1309,
+          1371
         ],
         "taper_s": 12.5
       }

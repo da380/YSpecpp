@@ -3,7 +3,7 @@
   "gravity": "full",
   "output": { "prefix": "map", "quantity": "velocity" },
   "degrees": { "max": 300 },
-  "frequencies_mHz": { "min": 0.2, "max": 10 },
+  "frequencies_mHz": { "min": 0.1, "max": 10 },
   "time_series": { "length_min": 90 },
   "filter_mHz": [0.1, 0.5, 8, 10],
   "sources": [

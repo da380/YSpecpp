@@ -5,6 +5,7 @@
 // the sections it shares with the others, and then its own.
 
 #include <YSpec/Calculation.hpp>
+#include <YSpec/HydrostaticFigure.hpp>
 #include <YSpec/Receiver.hpp>
 #include <YSpec/Source.hpp>
 #include <filesystem>
@@ -61,6 +62,7 @@ std::vector<double> ReadValues(const Json& json, double scale = 1);
 struct Shared {
   std::filesystem::path model;
   Calculation calculation;
+  HydrostaticFigure figure;
   std::vector<Source> sources;
   std::vector<std::string> names;
 };
@@ -78,10 +80,12 @@ Quantity ReadQuantity(const Json& output, Quantity fallback);
 // A receiver of its own: a depth, a "location" or a "distance_deg" and
 // "azimuth_deg" from a point, and an optional "instrument".
 Receiver ReadReceiver(const Json& json, const Location& from,
-                      const std::filesystem::path& directory);
+                      const std::filesystem::path& directory,
+                      const HydrostaticFigure& figure);
 
 // A "receivers" section.
 std::vector<Receiver> ReadReceivers(const Json& json,
-                                    const std::filesystem::path& directory);
+                                    const std::filesystem::path& directory,
+                                    const HydrostaticFigure& figure);
 
 }  // namespace YSpec::InputSections

@@ -11,15 +11,21 @@ class Seismograms:
     """Seismograms: `data[source, receiver, component, sample]`, the
     components up (Z), north (N) and east (E), in SI units of the quantity
     computed, or in those of a receiver's instrument; `time_s` the time of
-    each sample after the origin time."""
+    each sample after the origin time. Direct construction without a figure
+    uses spherical geometry and geocentric coordinates; calculations made by
+    :func:`seismograms` retain their model-derived figure."""
 
     components = ("Z", "N", "E")
 
-    def __init__(self, core, sources, receivers, quantity):
+    def __init__(self, core, sources, receivers, quantity, figure=None):
         self._core = core
         self.sources = sources
         self.receivers = receivers
         self.quantity = quantity
+        # Direct construction has no model context, so preserve the public
+        # four-argument API with explicit spherical/geocentric directions.
+        self.figure = (figure if figure is not None else
+                       _core.HydrostaticFigure.spherical())
         self.data = core.data
         self.time_step_s = core.time_step
         self.time_s = np.arange(core.samples) * core.time_step
@@ -39,8 +45,9 @@ class Seismograms:
             for j, receiver in enumerate(self.receivers):
                 a, b = _location(source), _location(receiver)
                 n, e = self.data[i, j, 1], self.data[i, j, 2]
-                for k, d in ((1, _core.radial_direction(a, b)),
-                             (2, _core.transverse_direction(a, b))):
+                for k, d in ((1, _core.radial_direction(a, b, self.figure)),
+                             (2, _core.transverse_direction(
+                                 a, b, self.figure))):
                     out[i, j, k] = d.north * n + d.east * e
         return out
 
@@ -52,8 +59,9 @@ class Seismograms:
         if component in ("R", "T"):
             a = _location(self.sources[source])
             b = _location(self.receivers[receiver])
-            d = (_core.radial_direction(a, b) if component == "R" else
-                 _core.transverse_direction(a, b))
+            d = (_core.radial_direction(a, b, self.figure)
+                 if component == "R" else
+                 _core.transverse_direction(a, b, self.figure))
             return (d.north * self.data[source, receiver, 1] +
                     d.east * self.data[source, receiver, 2])
         raise ValueError("component should be Z, N, E, R or T")
@@ -118,10 +126,12 @@ def seismograms(model, calculation, sources, receivers, progress=None):
         None, True to print progress, or a callable taking (done, total).
     """
     sources, receivers = _sources(sources), _receivers(receivers)
+    figure = model.figure(calculation.rotation_rate_rad_s,
+                          calculation.latitude_correction)
     core = _core.compute_seismograms(
         model._model, calculation._core(), [s._core() for s in sources],
         [r._core() for r in receivers], reporter(progress, "yspec"))
-    return Seismograms(core, sources, receivers, calculation.quantity)
+    return Seismograms(core, sources, receivers, calculation.quantity, figure)
 
 
 def strains(model, calculation, sources, receivers, progress=None):

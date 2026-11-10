@@ -1,6 +1,7 @@
 #include "InputSections.hpp"
 
 #include <YSpec/Instrument.hpp>
+#include <YSpec/Model.hpp>
 #include <algorithm>
 #include <array>
 #include <iterator>
@@ -54,6 +55,14 @@ double Depth(const Json& json) {
 }
 
 void ReadPhysics(const Json& json, Calculation& calculation) {
+  if (const auto* correction = json.Find("latitude_correction")) {
+    calculation.latitudeCorrection = correction->AsBool();
+  }
+  calculation.rotationRate =
+      Number(json, "rotation_rate_rad_s", calculation.rotationRate);
+  if (!(calculation.rotationRate >= 0)) {
+    Fail(json.At("rotation_rate_rad_s"), "should not be negative");
+  }
   if (const auto* attenuation = json.Find("attenuation")) {
     calculation.attenuation = attenuation->AsBool();
   }
@@ -205,8 +214,17 @@ Location ReadLocation(const Json& json) {
 }
 
 std::vector<std::string_view> SharedMembers() {
-  return {"model",       "attenuation", "gravity", "degrees", "frequencies_mHz",
-          "time_series", "filter_mHz",  "sources", "solver"};
+  return {"model",
+          "attenuation",
+          "gravity",
+          "degrees",
+          "frequencies_mHz",
+          "time_series",
+          "filter_mHz",
+          "sources",
+          "solver",
+          "latitude_correction",
+          "rotation_rate_rad_s"};
 }
 
 Shared ReadShared(const Json& json, const std::filesystem::path& directory) {
@@ -214,6 +232,8 @@ Shared ReadShared(const Json& json, const std::filesystem::path& directory) {
   auto& calculation = shared.calculation;
   shared.model = directory / json.At("model").AsString();
   ReadPhysics(json, calculation);
+  const auto model = Model::ReadDeck(shared.model);
+  shared.figure = FigureFor(model, calculation);
   ReadDegrees(json.At("degrees"), calculation);
   ReadBand(json.At("frequencies_mHz"), calculation);
   ReadSampling(json.At("time_series"), calculation);
@@ -247,7 +267,8 @@ std::vector<double> Depths(const Json& json) {
   return depths;
 }
 
-std::vector<Location> ReadProfile(const Json& profile) {
+std::vector<Location> ReadProfile(const Json& profile,
+                                  const HydrostaticFigure& figure) {
   Allow(profile, {"from", "to", "azimuth_deg", "distances_deg", "count"});
   const auto from = ReadLocation(profile.At("from"));
   const auto& count = profile.At("count");
@@ -258,7 +279,7 @@ std::vector<Location> ReadProfile(const Json& profile) {
   const auto* distances = profile.Find("distances_deg");
   if (to && !azimuth && !distances) {
     try {
-      return GreatCircle(from, ReadLocation(*to), points);
+      return GreatCircle(from, ReadLocation(*to), points, figure);
     } catch (const std::invalid_argument& error) {
       Fail(profile, error.what());
     }
@@ -270,7 +291,7 @@ std::vector<Location> ReadProfile(const Json& profile) {
     if (!(min >= 0 && min <= max && max <= 180)) {
       Fail(*distances, "should satisfy 0 <= min <= max <= 180");
     }
-    return GreatCircle(from, azimuth->AsNumber(), min, max, points);
+    return GreatCircle(from, azimuth->AsNumber(), min, max, points, figure);
   }
   Fail(profile,
        "should have either \"to\", or \"azimuth_deg\" and \"distances_deg\"");
@@ -289,8 +310,9 @@ std::optional<Instrument> ReadInstrument(
   }
 }
 
-std::vector<Receiver> ReadReceiverGroup(
-    const Json& group, const std::filesystem::path& directory) {
+std::vector<Receiver> ReadReceiverGroup(const Json& group,
+                                        const std::filesystem::path& directory,
+                                        const HydrostaticFigure& figure) {
   Allow(group, {"depth_km", "locations", "profile", "instrument"});
   const auto depths = Depths(group.At("depth_km"));
   const auto* list = group.Find("locations");
@@ -305,7 +327,7 @@ std::vector<Receiver> ReadReceiverGroup(
     }
     if (locations.empty()) Fail(*list, "is empty");
   } else {
-    locations = ReadProfile(*profile);
+    locations = ReadProfile(*profile, figure);
   }
   const auto instrument = ReadInstrument(group, directory);
   auto receivers = std::vector<Receiver>{};
@@ -321,7 +343,8 @@ std::vector<Receiver> ReadReceiverGroup(
 }  // namespace
 
 Receiver ReadReceiver(const Json& json, const Location& from,
-                      const std::filesystem::path& directory) {
+                      const std::filesystem::path& directory,
+                      const HydrostaticFigure& figure) {
   Allow(json,
         {"depth_km", "location", "distance_deg", "azimuth_deg", "instrument"});
   auto receiver = Receiver{.location = {},
@@ -335,7 +358,8 @@ Receiver ReadReceiver(const Json& json, const Location& from,
   } else if (!location && distance && azimuth) {
     const auto d = distance->AsNumber();
     if (!(d >= 0 && d <= 180)) Fail(*distance, "should lie between 0 and 180");
-    receiver.location = GreatCircle(from, azimuth->AsNumber(), d, d, 1).front();
+    receiver.location =
+        GreatCircle(from, azimuth->AsNumber(), d, d, 1, figure).front();
   } else {
     Fail(json,
          "should have either \"location\", or \"distance_deg\" and "
@@ -345,11 +369,12 @@ Receiver ReadReceiver(const Json& json, const Location& from,
 }
 
 std::vector<Receiver> ReadReceivers(const Json& json,
-                                    const std::filesystem::path& directory) {
-  if (!json.IsArray()) return ReadReceiverGroup(json, directory);
+                                    const std::filesystem::path& directory,
+                                    const HydrostaticFigure& figure) {
+  if (!json.IsArray()) return ReadReceiverGroup(json, directory, figure);
   auto receivers = std::vector<Receiver>{};
   for (const auto& group : json.AsArray()) {
-    std::ranges::move(ReadReceiverGroup(group, directory),
+    std::ranges::move(ReadReceiverGroup(group, directory, figure),
                       std::back_inserter(receivers));
   }
   if (receivers.empty()) Fail(json, "is empty");

@@ -18,6 +18,7 @@ using KernelTest::TheSource;
 
 Calculation Small() {
   auto c = Calculation{};
+  c.latitudeCorrection = false;
   c.degrees = {0, 30};
   c.band = {0.2e-3, 4e-3};
   c.sampling = {3600, 60};

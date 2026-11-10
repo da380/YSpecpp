@@ -131,15 +131,23 @@ def _location(place):
 
 
 def great_circle(start, azimuth_deg, distances_deg, depth_km=0.0,
-                 instrument=None):
+                 instrument=None, figure=None):
     """Receivers along a great circle: at the distances given (degrees) from
     `start`, a Source or a (latitude, longitude), in the direction of
-    `azimuth_deg` there (clockwise from north)."""
+    `azimuth_deg` there (clockwise from north). If `figure` is supplied,
+    coordinates are geographic and converted with that model-derived figure;
+    otherwise they are already geocentric on a sphere, with no assumed Earth
+    shape."""
     origin = _location(start)
     receivers = []
     for i, distance in enumerate(distances_deg):
-        place = _core.great_circle(origin, float(azimuth_deg), float(distance),
-                                   float(distance), 1)[0]
+        if figure is None:
+            place = _core.great_circle(origin, float(azimuth_deg),
+                                       float(distance), float(distance), 1)[0]
+        else:
+            place = _core.great_circle(origin, float(azimuth_deg),
+                                       float(distance), float(distance), 1,
+                                       figure)[0]
         receivers.append(Receiver(place.latitude, place.longitude, depth_km,
                                   instrument, name=f"{i + 1}"))
     return receivers

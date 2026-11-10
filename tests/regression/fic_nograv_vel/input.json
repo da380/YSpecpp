@@ -23,7 +23,7 @@
   "sources": [
     {
       "depth_km": 10.0,
-      "latitude": -20.0,
+      "latitude": -19.876102013258784,
       "longitude": 170.0,
       "moment_tensor_Nm": {
         "rr": 4.22e+17,
@@ -39,8 +39,9 @@
     "depth_km": 50.0,
     "locations": [
       [0.0, 0.0],
-      [45.0, 45.0],
-      [-60.0, -100.0]
+      [44.80675136220638, 45.0],
+      [-59.832358900260076, -100.0]
     ]
-  }
+  },
+  "latitude_correction": false
 }

@@ -85,27 +85,26 @@ that runs it and plots the result:
 
 | example | program | what it shows |
 |---------|---------|---------------|
-| `record-section` | `yspec` | velocity every 5 degrees along a great circle, vertical and transverse |
-| `instrument` | `yspec` | one place recorded twice: the ground displacement, and a seismometer's output in counts |
+| `record-section` | `yspec` | displacement every 5 degrees along a great circle, vertical and transverse |
+| `instrument` | `yspec` | one place recorded twice: ground displacement and a seismometer response in its declared output units |
 | `depths` | `yspec` | one place at depths from the sea floor to the inner core |
 | `gravity` | `yspec` | a long-period seismogram without gravity, in the Cowling approximation and in full |
 | `force` | `yspec` | the waves from a point force, of the kind a landslide exerts |
 | `cross-section` | `yspec-snapshot` | the wavefield on a great circle through the whole earth at six times |
 | `map` | `yspec-snapshot` | the wavefield at the sea floor around the source, over the whole globe |
-| `kernels` | `yspec-kernels` | the radial kernels of an S-wave and a Rayleigh-wave traveltime |
-| `kernels-3d` | `yspec-kernels` | the three-dimensional kernel of an S-wave traveltime: its banana and Fresnel zones |
-| `kernels-gallery` | `yspec-kernels` | the three-dimensional kernels of P, PP, S, ScS and SS at 60 degrees and of Pdiff and Sdiff at 110, on sections along and across the path |
+| `kernels` | `yspec-kernels` | radial kernels for an S-window measurement and a long-period vertical wave packet; neither is claimed to isolate one phase |
+| `kernels-3d` | `yspec-kernels` | a three-dimensional kernel for a mixed transverse shear packet in an S-arrival window; its banana and Fresnel-zone sections |
+| `kernels-gallery` | `yspec-kernels` | three-dimensional kernels for cross-correlation windows targeting P, PP, S, ScS, SS, Pdiff and Sdiff packets, on sections along and across the path |
 
 ```sh
 cd build
 examples/record-section/run.sh     # or examples/run-all.sh for all of them
 ```
 
-Each takes seconds to a minute on four threads (the scripts use four unless
-`OMP_NUM_THREADS` says otherwise), the gallery of kernels about three
-minutes, and writes its output and figures in its own directory. The
-programs are found in the build, on the `PATH`, or in
-`YSPEC_BIN`.
+Each script writes its solver output and figures in its own directory. Runtime
+depends on the input and build; kernel galleries are more expensive because
+they compute several adjoint fields. The programs are found in the build, on
+the `PATH`, or in `YSPEC_BIN`.
 
 The figures are drawn by `yspec-plot`, which the Python package installs
 with its `plot` extra (see the Python section below), built on
@@ -132,36 +131,98 @@ circle through the source and the receiver and on maps at some depths,
 `banana` its kernel on the sections along the path and across it, below its
 seismogram and window, and `gallery` those of every measurement of a run, a
 row for each. With several measurements, `--measurement` chooses one by
-name. The colours of kernels saturate near the source and the receiver,
-where the kernels are far larger than elsewhere. The components of
-seismograms are Z, N and E, or R and T, radial and transverse to the source.
+name. Trace panels share an amplitude scale across compatible components
+within each receiver row by default; `traces --scale independent` labels the
+deliberately independent alternative. `compare` checks that runs have matching
+physical quantities, units, receiver geometry and time samples before it
+subtracts them. Instrument output units come from the response metadata when
+present; they are not assumed to be counts. The components are Z, N and E, or
+R and T, radial away from the source and transverse 90° anticlockwise from it.
 Without `-o` the figure is shown.
+
+Snapshot and spatial-kernel colour bars report the displayed units, limits,
+per-slice maxima before clipping and saturated fractions. Snapshot panels use independent limits
+per time unless `--common` is requested. Banana and gallery panels use their
+own symmetric 99th-percentile limits: values above 150 km depth are omitted
+from the limit calculation, and along-path limits also omit points within 5°
+of the source and receiver. Volume slices use their own percentile limits.
+Non-K banana and gallery sections are cropped at a radius of 3000 km; their
+titles show the displayed radial extent, and omitted deeper values are not
+shown as zero.
+These are display scales only: saturation changes colours, not saved numerical
+values. Gouraud shading between saved section samples is visual interpolation,
+not additional spatial resolution; snapshot maps assign saved values to
+nearest-sample cells. Record sections intentionally normalize each trace and
+may clip amplified traces to prevent overlap, as disclosed in the plot title.
+
+The example figures demonstrate workflows and output interpretation; running
+an example or passing a plotting check does not certify its waveform or kernel
+as converged. The <a href="docs/site/examples/all-plots-provenance.md">plot status and provenance record</a>
+tracks the source inputs, saved numerical evidence and remaining scientific
+limits for each documented figure.
 
 ### Input
 
 The calculation is read from a JSON file:
 
+This root input uses the published DSpecM1D Bolivia comparison settings: PREM with ocean, no attenuation, full gravity, displacement, degrees 0–300, 1.5–21 mHz, a 300-minute record at 1 s, and the stated four-corner taper. It supplies the comparison’s geocentric latitudes directly with latitude correction disabled; the new model-derived default is documented separately. Its duration check remains unresolved; the setup is not a converged reference.
+
 ```json
 {
   "model": "prem.200",
-  "attenuation": true,
+  "latitude_correction": false,
+  "attenuation": false,
   "gravity": "full",
   "output": {
     "prefix": "yspec.out",
-    "quantity": "velocity",
+    "quantity": "displacement",
     "potential_and_tilt_corrections": false
   },
-  "degrees": { "min": 0, "max": 600 },
-  "frequencies_mHz": { "min": 0.2, "max": 40 },
-  "time_series": { "length_min": 60, "time_step_s": 1.0 },
-  "filter_mHz": [1.0, 5.0, 38, 40],
-  "sources": [
-    { "name": "event", "depth_km": 29.5, "latitude": 36.87, "longitude": 35.58,
-      "moment_tensor_Nm": { "rr": 4.22e17, "rt": 3.08e17, "rp": 6.99e17,
-                            "tt": -2.976e18, "tp": 6.54e17, "pp": 2.55e18 } }
+  "degrees": {
+    "min": 0,
+    "max": 300
+  },
+  "frequencies_mHz": {
+    "min": 1.5,
+    "max": 21.0
+  },
+  "time_series": {
+    "length_min": 300.0,
+    "time_step_s": 1.0
+  },
+  "filter_mHz": [
+    1.9,
+    2.0,
+    20.0,
+    20.1
   ],
-  "receivers": { "depth_km": 3, "locations": [[0, 4], [0, 6], [0, 8]] },
-  "solver": { "tolerance": 1e-5 }
+  "sources": [
+    {
+      "depth_km": 647.1,
+      "latitude": -13.82,
+      "longitude": -67.25,
+      "moment_tensor_Nm": {
+        "rr": -7.59e+20,
+        "rt": -2.5e+21,
+        "rp": 4.2e+19,
+        "tt": 7.75e+20,
+        "tp": -2.48e+20,
+        "pp": -1.6e+19
+      }
+    }
+  ],
+  "receivers": {
+    "depth_km": 3.0,
+    "locations": [
+      [
+        80.0,
+        0.0
+      ]
+    ]
+  },
+  "solver": {
+    "tolerance": 1e-05
+  }
 }
 ```
 
@@ -169,6 +230,16 @@ The calculation is read from a JSON file:
   Relative paths, here and in `output.prefix`, are relative to the input
   file.
 - `attenuation`: whether to include attenuation (default `true`).
+- `latitude_correction`: whether source and receiver latitude values use the
+  model-derived first-order hydrostatic figure (default `true`). With the
+  correction enabled, supplied latitudes are geographic and are converted
+  using the model density and spin; set it to `false` when supplied latitudes
+  are already geocentric, using spherical geometry. Depth remains radial and
+  the local tensor/component bases are unchanged.
+- `rotation_rate_rad_s`: uniform rotation rate in rad/s used for the figure
+  (default `7.292115e-5`, the IAU nominal mean Earth angular velocity). This
+  is an input override for model-specific spin; with latitude correction off
+  the supplied coordinates remain geocentric.
 - `gravity`: `"none"`, `"cowling"` or `"full"` (default `"full"`).
 - `output.quantity`: `"displacement"`, `"velocity"` or `"acceleration"`
   (default displacement). `potential_and_tilt_corrections` applies to
@@ -210,7 +281,8 @@ The calculation is read from a JSON file:
   part wraps round and reappears, amplified, at the end of the time series.
   A low ramp of 1 mHz or more, or a longer time series, keeps it out of the
   record.
-- `sources`: one or more, each with its hypocentre (geographic latitude) and
+- `sources`: one or more, each with its hypocentre (geographic latitude when
+  `latitude_correction` is enabled, geocentric latitude when it is off) and
   its moment tensor `moment_tensor_Nm`, a point force `force_N` (members
   `r`, `t`, `p`, each defaulting to zero), or both, in spherical coordinates
   at the source (r up, theta south, phi east), as a step at the origin time.
@@ -306,7 +378,7 @@ that its `output` has only `prefix` and `quantity`, and that `receiver`,
 "measurements": [
   { "name": "S", "component": "T",
     "traveltime": { "window_s": [1000, 1200], "taper_s": 40 } },
-  { "name": "Rayleigh", "component": "Z",
+  { "name": "long-period-Z-packet", "component": "Z",
     "traveltime": { "window_s": [1550, 2050], "taper_s": 100 } }
 ],
 "kernels": {
@@ -362,8 +434,11 @@ of the moduli that set it concentrated there. `<prefix>.measurement` has a
 line for each sample: the time, the seismogram measured, the window and the
 adjoint source. Both kernels and point parts predict finite differences of
 the measurement to about 1e-6, in every treatment of gravity; the tests
-check them. The example of an S wave and a Rayleigh wave, to 15 mHz and
-degree 300 at 680 nodes, takes about 13 s on four threads.
+check them. The current two-window radial run (L ≤ 300, 0.2–15 mHz, 40 minutes at 2 s)
+completed in 24.05 s on two threads; that timing is environment-specific. The
+long-period Z window is named `long-period-Z-packet`: no surface-wave or
+normal-mode comparison has validated it as Rayleigh, and convergence remains
+unresolved.
 
 With `volume`, the three-dimensional kernels are computed as well, for the
 same parameters at fixed density: laterally varying perturbations of density
@@ -408,7 +483,7 @@ threads.
 ## Accuracy and speed
 
 The integration controls its step size, so its accuracy is set by
-`solver.tolerance`. On the example input (degrees to 600, up to 40 mHz, 60
+`solver.tolerance`. On the historical benchmark input (degrees to 600, up to 40 mHz, 60
 receivers), against seismograms from the Fortran with sixteen times its usual
 step density, the largest error relative to the peak of each component is:
 
@@ -494,8 +569,11 @@ calculation.sampling = {.duration = 3600, .timeStep = 20};  // s
 
 const auto sources = std::vector<YSpec::Source>{
     {.location = {0, 0}, .depth = 29.5e3, .moment = {.rr = 1e18}}};
-const auto receivers = std::vector<YSpec::Receiver>{
-    {.location = {0, 30}, .depth = 3e3}, {.location = {0, 60}, .depth = 3e3}};
+const auto figure = YSpec::FigureFor(model, calculation);
+const auto locations = YSpec::GreatCircle({0, 0}, 90, 30, 60, 2, figure);
+auto receivers = std::vector<YSpec::Receiver>{};
+for (const auto& location : locations)
+  receivers.push_back({.location = location, .depth = 3e3});
 
 const auto seismograms =
     YSpec::ComputeSeismograms(model, calculation, sources, receivers);
@@ -513,7 +591,11 @@ displacement, as strainmeters and fibre-optic cables record; strain and
 displacement satisfy reciprocity with each other to 1e-8, which the tests
 check. A receiver may carry an `Instrument`, read from a
 SAC pole-zero file with `YSpec::ReadSacPoleZero`, and `YSpec::GreatCircle`
-gives lines of receivers along great circles.
+gives lines of receivers along great circles. For a geographic path with the
+default corrected calculation, pass `YSpec::FigureFor(model, calculation)` to
+that helper; a model-less helper call uses spherical/geocentric coordinates.
+The same explicit figure is required for standalone `RadialDirection` and
+`TransverseDirection` helpers when matching a corrected calculation.
 
 `YSpec::ComputeRadialKernels` gives the sensitivity of a measurement on a
 seismogram to spherically symmetric perturbations of the model, by the adjoint
@@ -555,22 +637,30 @@ programs, the PREM decks of the examples and, with the `plot` extra,
 `yspec-plot`:
 
 ```python
-import numpy as np
 import yspec
 
 model = yspec.Model.prem()
-source = yspec.Source(latitude=36.87, longitude=35.58, depth_km=29.5,
-                      moment_tensor=dict(rr=4.22e17, rt=3.08e17, rp=6.99e17,
-                                         tt=-2.976e18, tp=6.54e17, pp=2.55e18))
-receivers = yspec.great_circle(source, azimuth_deg=60,
-                               distances_deg=np.arange(5, 180, 5))
-calculation = yspec.Calculation(degrees=300, frequencies_mhz=(0.2, 15),
-                                length_min=60, filter_mhz=(1, 2, 12, 15),
-                                quantity="velocity")
+source = yspec.Source(
+    latitude=-13.82, longitude=-67.25, depth_km=647.1,
+    moment_tensor=dict(rr=-7.59e20, rt=-2.5e21, rp=4.2e19,
+                       tt=7.75e20, tp=-2.48e20, pp=-1.6e19),
+    name="bolivia")
+receivers = [yspec.Receiver(latitude=80.0, longitude=0,
+                            depth_km=3)]
+calculation = yspec.Calculation(
+    degrees=(0, 300), frequencies_mhz=(1.5, 21), length_min=300,
+    time_step_s=1, filter_mhz=(1.9, 2.0, 20.0, 20.1),
+    gravity="full", attenuation=False, quantity="displacement",
+    latitude_correction=False)
 seismograms = yspec.seismograms(model, calculation, source, receivers,
                                 progress=True)
-seismograms.data   # [source, receiver, component, sample]: Z, N and E
+seismograms.time_s           # 18,001 samples, from 0 to 18,000 s
+seismograms.data              # [source, receiver, component, sample]: Z, N, E
 ```
+
+This Python example matches the Bolivia input above. Its 300-to-600-minute
+waveform check exceeds the 1% duration target, so it does not claim a
+converged reference; see the <a href="docs/site/examples/first-seismogram-provenance.md">recorded comparison</a>.
 
 It has seismograms and strains, snapshots, traveltimes and their radial and
 three-dimensional kernels, in the units of the input files (km, degrees,

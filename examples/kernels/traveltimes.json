@@ -15,7 +15,7 @@
   "measurements": [
     { "name": "S", "component": "T",
       "traveltime": { "window_s": [1000, 1200], "taper_s": 40 } },
-    { "name": "Rayleigh", "component": "Z",
+    { "name": "long-period-Z-packet", "component": "Z",
       "traveltime": { "window_s": [1550, 2050], "taper_s": 100 } }
   ],
   "kernels": { "parameters": "velocities", "scaling": "relative" }

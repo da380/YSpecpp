@@ -16,29 +16,56 @@ pip install "yspec-seismo[plot]"    # and yspec-plot, to draw what they write
 It is imported as `yspec`:
 
 ```python
-import numpy as np
 import yspec
 
-model = yspec.Model.prem()
-source = yspec.Source(latitude=36.87, longitude=35.58, depth_km=29.5,
-                      moment_tensor=dict(rr=4.22e17, rt=3.08e17, rp=6.99e17,
-                                         tt=-2.976e18, tp=6.54e17, pp=2.55e18))
-receivers = yspec.great_circle(source, azimuth_deg=60,
-                               distances_deg=np.arange(5, 180, 5))
-calculation = yspec.Calculation(degrees=300, frequencies_mhz=(0.2, 15),
-                                length_min=60, filter_mhz=(1, 2, 12, 15),
-                                quantity="velocity")
+model = yspec.Model.prem()  # includes the ocean
+source = yspec.Source(
+    latitude=-13.82, longitude=-67.25, depth_km=647.1,
+    moment_tensor=dict(rr=-7.59e20, rt=-2.5e21, rp=4.2e19,
+                       tt=7.75e20, tp=-2.48e20, pp=-1.6e19),
+    name="bolivia")
+receivers = [yspec.Receiver(latitude=80.0, longitude=0,
+                            depth_km=3)]
+calculation = yspec.Calculation(
+    degrees=(0, 300), frequencies_mhz=(1.5, 21), length_min=300,
+    time_step_s=1, filter_mhz=(1.9, 2.0, 20.0, 20.1),
+    gravity="full", attenuation=False, quantity="displacement",
+    latitude_correction=False)
 
 seismograms = yspec.seismograms(model, calculation, source, receivers,
                                 progress=True)
-seismograms.time_s           # the time of each sample (s)
-seismograms.data             # [source, receiver, component, sample]: Z, N, E
-seismograms.rotated()        # the same with Z, R and T
-seismograms.to_obspy()       # an ObsPy Stream (with ObsPy installed)
+seismograms.time_s           # 18,001 samples, from 0 to 18,000 s
+seismograms.data              # [source, receiver, component, sample]: Z, N, E
 ```
 
 Lengths are in km, angles in degrees, frequencies in mHz and times in s, as
 in the programs' input files; the results are numpy arrays in SI units.
+This comparison fixture uses the published geocentric source latitude (−13.82°) and receiver latitude (80°) with latitude correction disabled, preserving the historical spherical geometry. The new default instead derives a first-order hydrostatic figure from model density and rotation. The 300-to-600-minute waveform difference exceeds the current 1% duration target, so this reproduces the comparison setup without claiming a converged reference.
+
+For geographic coordinates with the default correction enabled, use the same
+model-derived figure for any standalone great-circle or direction helper:
+
+```python
+figure = model.figure(calculation.rotation_rate_rad_s,
+                      calculation.latitude_correction)
+points = yspec.great_circle(source, 60, [0, 30, 60], figure=figure)
+```
+
+The model-less `yspec.great_circle(...)` convention is spherical/geocentric;
+it does not silently assume an Earth model. The same explicit-figure rule
+applies to radial and transverse direction helpers. A disabled correction
+uses geocentric coordinates directly.
+
+For plots, `yspec-plot traces --components ZNE` selects the physical Z, N and E
+components; the CLI default is ZRT, with R radial away from the source and T
+90° anticlockwise from it. Components with compatible units at each receiver
+share a physical amplitude scale. `--scale independent` labels a separate
+scale for every component. The comparison plot checks exact
+time samples, physical quantity, units and receiver geometry before
+subtracting runs. Instrument traces retain the output units declared by their
+response metadata; plots never share a physical scale across incompatible
+units. R and T remain available as radial-away and 90° anticlockwise
+transverse components.
 
 - `yspec.seismograms` and `yspec.strains`: at receivers anywhere but the
   centre, in the ocean, the crust or the core, from moment tensors and forces,

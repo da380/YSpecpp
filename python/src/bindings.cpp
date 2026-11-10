@@ -139,6 +139,7 @@ void BindSamplingArrays(nb::class_<T>& cls, Nodes nodes, Places places) {
 }  // namespace
 
 NB_MODULE(_core, m) {
+  m.attr("EARTH_ROTATION_RATE") = YSpec::EarthRotationRate;
   using namespace YSpec;
   m.doc() = "YSpec's library, in SI units; see the yspec package.";
   m.attr("__version__") = YSPEC_VERSION;
@@ -177,9 +178,18 @@ NB_MODULE(_core, m) {
             &GreatCircle),
         "start"_a, "end"_a, "count"_a);
   m.def("great_circle",
+        nb::overload_cast<const Location&, const Location&, std::size_t,
+                          const HydrostaticFigure&>(&GreatCircle),
+        "start"_a, "end"_a, "count"_a, "figure"_a);
+  m.def("great_circle",
         nb::overload_cast<const Location&, double, double, double, std::size_t>(
             &GreatCircle),
         "start"_a, "azimuth"_a, "min_distance"_a, "max_distance"_a, "count"_a);
+  m.def("great_circle",
+        nb::overload_cast<const Location&, double, double, double, std::size_t,
+                          const HydrostaticFigure&>(&GreatCircle),
+        "start"_a, "azimuth"_a, "min_distance"_a, "max_distance"_a, "count"_a,
+        "figure"_a);
 
   nb::class_<MomentTensor>(m, "MomentTensor")
       .def(
@@ -305,6 +315,8 @@ NB_MODULE(_core, m) {
       .def_rw("step_factor", &SolverOptions::stepFactor);
   nb::class_<Calculation>(m, "Calculation")
       .def(nb::init<>())
+      .def_rw("latitude_correction", &Calculation::latitudeCorrection)
+      .def_rw("rotation_rate", &Calculation::rotationRate)
       .def_rw("gravity", &Calculation::gravity)
       .def_rw("attenuation", &Calculation::attenuation)
       .def_rw("quantity", &Calculation::quantity)
@@ -356,6 +368,30 @@ NB_MODULE(_core, m) {
           },
           "radius"_a, "side"_a = Side::Below)
       .def("material", &MaterialAt, "layer"_a, "radius"_a);
+  nb::class_<HydrostaticFigure::Node>(m, "FigureNode")
+      .def_ro("radius", &HydrostaticFigure::Node::radius)
+      .def_ro("ellipticity", &HydrostaticFigure::Node::ellipticity)
+      .def_ro("radial_derivative", &HydrostaticFigure::Node::radialDerivative);
+  nb::class_<HydrostaticFigure>(m, "HydrostaticFigure")
+      .def_static("spherical", &HydrostaticFigure::Spherical,
+                  "rotation_rate"_a = 0.0)
+      .def_static("from_model", &HydrostaticFigure::FromModel, "model"_a,
+                  "rotation_rate"_a = EarthRotationRate, "tolerance"_a = 1e-9)
+      .def_prop_ro("enabled", &HydrostaticFigure::Enabled)
+      .def_prop_ro("rotation_rate", &HydrostaticFigure::RotationRate)
+      .def_prop_ro("surface_ellipticity",
+                   &HydrostaticFigure::SurfaceEllipticity)
+      .def_prop_ro("nodes",
+                   [](const HydrostaticFigure& figure) {
+                     const auto nodes = figure.Nodes();
+                     return std::vector<HydrostaticFigure::Node>(nodes.begin(),
+                                                                 nodes.end());
+                   })
+      .def("ellipticity", &HydrostaticFigure::Ellipticity, "radius"_a)
+      .def("geocentric_latitude", &HydrostaticFigure::GeocentricLatitude,
+           "geographic_latitude"_a)
+      .def("geographic_latitude", &HydrostaticFigure::GeographicLatitude,
+           "geocentric_latitude"_a);
 
   // Seismograms and strains.
   nb::enum_<Component>(m, "Component")
@@ -469,8 +505,21 @@ NB_MODULE(_core, m) {
       .def_rw("north", &Direction::north)
       .def_rw("east", &Direction::east);
   m.def("along", &Along, "component"_a);
-  m.def("radial_direction", &RadialDirection, "source"_a, "receiver"_a);
-  m.def("transverse_direction", &TransverseDirection, "source"_a, "receiver"_a);
+  m.def("radial_direction",
+        nb::overload_cast<const Location&, const Location&>(&RadialDirection),
+        "source"_a, "receiver"_a);
+  m.def("radial_direction",
+        nb::overload_cast<const Location&, const Location&,
+                          const HydrostaticFigure&>(&RadialDirection),
+        "source"_a, "receiver"_a, "figure"_a);
+  m.def(
+      "transverse_direction",
+      nb::overload_cast<const Location&, const Location&>(&TransverseDirection),
+      "source"_a, "receiver"_a);
+  m.def("transverse_direction",
+        nb::overload_cast<const Location&, const Location&,
+                          const HydrostaticFigure&>(&TransverseDirection),
+        "source"_a, "receiver"_a, "figure"_a);
   nb::class_<Measurement>(m, "Measurement")
       .def(
           "__init__",
@@ -631,12 +680,35 @@ NB_MODULE(_core, m) {
       .def_rw("half_width", &MapOptions::halfWidth)
       .def_rw("spacing", &MapOptions::spacing);
   m.def("volume_sampling", &VolumeSampling, "model"_a, "grid"_a = VolumeGrid{});
-  m.def("path_section", &PathSection, "model"_a, "source"_a, "receiver"_a,
-        "options"_a = SectionOptions{});
-  m.def("cross_section", &CrossSection, "model"_a, "source"_a, "receiver"_a,
-        "options"_a = SectionOptions{});
-  m.def("path_maps", &PathMaps, "model"_a, "source"_a, "receiver"_a,
-        "options"_a);
+  m.def("path_section",
+        nb::overload_cast<const Model&, const Location&, const Location&,
+                          const SectionOptions&>(&PathSection),
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{});
+  m.def("path_section",
+        nb::overload_cast<const Model&, const Location&, const Location&,
+                          const SectionOptions&, const HydrostaticFigure&>(
+            &PathSection),
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{},
+        "figure"_a);
+  m.def("cross_section",
+        nb::overload_cast<const Model&, const Location&, const Location&,
+                          const SectionOptions&>(&CrossSection),
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{});
+  m.def("cross_section",
+        nb::overload_cast<const Model&, const Location&, const Location&,
+                          const SectionOptions&, const HydrostaticFigure&>(
+            &CrossSection),
+        "model"_a, "source"_a, "receiver"_a, "options"_a = SectionOptions{},
+        "figure"_a);
+  m.def("path_maps",
+        nb::overload_cast<const Model&, const Location&, const Location&,
+                          const MapOptions&>(&PathMaps),
+        "model"_a, "source"_a, "receiver"_a, "options"_a);
+  m.def(
+      "path_maps",
+      nb::overload_cast<const Model&, const Location&, const Location&,
+                        const MapOptions&, const HydrostaticFigure&>(&PathMaps),
+      "model"_a, "source"_a, "receiver"_a, "options"_a, "figure"_a);
   auto sampled = nb::class_<SampledKernels>(m, "SampledKernels");
   sampled.def_prop_ro("names", &SampledKernels::Names)
       .def_prop_ro(

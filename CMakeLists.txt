@@ -168,6 +168,7 @@ add_library(YSpec
   src/Input.cpp
   src/InputSections.cpp
   src/Instrument.cpp
+  src/HydrostaticFigure.cpp
   src/Kernels.cpp
   src/Location.cpp
   src/Model.cpp

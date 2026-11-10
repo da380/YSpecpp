@@ -10,11 +10,14 @@ integration of the equations of motion in the frequency domain.
                           moment_tensor=dict(rr=4.22e17, rt=3.08e17,
                                              rp=6.99e17, tt=-2.976e18,
                                              tp=6.54e17, pp=2.55e18))
-    receivers = yspec.great_circle(source, azimuth_deg=60,
-                                   distances_deg=np.arange(5, 180, 5))
     calculation = yspec.Calculation(degrees=300, frequencies_mhz=(0.2, 15),
                                     length_min=60, filter_mhz=(1, 2, 12, 15),
                                     quantity="velocity")
+    figure = model.figure(calculation.rotation_rate_rad_s,
+                          calculation.latitude_correction)
+    receivers = yspec.great_circle(source, azimuth_deg=60,
+                                   distances_deg=np.arange(5, 180, 5),
+                                   figure=figure)
     seismograms = yspec.seismograms(model, calculation, source, receivers,
                                     progress=True)
     seismograms.data  # [source, receiver, component, sample], Z, N and E

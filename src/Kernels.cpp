@@ -48,13 +48,25 @@ Direction Along(Component component) {
 // that turns the components there; radial is opposite it, and transverse a
 // quarter turn anticlockwise from radial.
 Direction RadialDirection(const Location& source, const Location& receiver) {
-  const auto back = 2 * std::numbers::pi - Geometry(receiver, source).rotation;
+  return RadialDirection(source, receiver, HydrostaticFigure::Spherical());
+}
+
+Direction RadialDirection(const Location& source, const Location& receiver,
+                          const HydrostaticFigure& figure) {
+  const auto back =
+      2 * std::numbers::pi - Geometry(receiver, source, figure).rotation;
   return {.up = 0, .north = -std::cos(back), .east = -std::sin(back)};
 }
 
 Direction TransverseDirection(const Location& source,
                               const Location& receiver) {
-  const auto back = 2 * std::numbers::pi - Geometry(receiver, source).rotation;
+  return TransverseDirection(source, receiver, HydrostaticFigure::Spherical());
+}
+
+Direction TransverseDirection(const Location& source, const Location& receiver,
+                              const HydrostaticFigure& figure) {
+  const auto back =
+      2 * std::numbers::pi - Geometry(receiver, source, figure).rotation;
   return {.up = 0, .north = -std::sin(back), .east = std::cos(back)};
 }
 
@@ -157,8 +169,9 @@ std::vector<RadialAccumulation> AccumulateRadial(
   // Where the receiver is in the frame with the source at the pole, the
   // functions there that place the adjoint field's force, and the forces of
   // the basis of the measurements' directions in that frame.
+  const auto figure = FigureFor(model, calculation);
   const auto geometry =
-      Geometry(measurements.front().receiver.location, source.location);
+      Geometry(measurements.front().receiver.location, source.location, figure);
   const auto spin = SpinFunctions(degrees.max, {geometry.distance});
   const auto basis = MakeBasis(measurements);
   auto forces = std::vector<Force>{};

@@ -38,6 +38,7 @@ Spectra ComputeSpectra(const Model& model, const Calculation& calculation,
   }
 
   const auto grid = MakeGrid(calculation, scales);
+  const auto figure = FigureFor(model, calculation);
 
   // One solver for every source depth and every receiver depth.
   auto depths = std::vector<double>{};
@@ -45,7 +46,7 @@ Spectra ComputeSpectra(const Model& model, const Calculation& calculation,
   const auto solves = DepthSolves(model, calculation, sources, depths);
 
   const auto views =
-      Views<typename Kind::Table>(sources, receivers, degrees.max);
+      Views<typename Kind::Table>(sources, receivers, degrees.max, figure);
   const auto receiverCount = receivers.size();
   const auto frequencyCount = grid.Count();
   auto spectra =

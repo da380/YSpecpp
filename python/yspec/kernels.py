@@ -23,10 +23,7 @@ _PARAMETERS = {"love": _core.ParameterSet.love,
                "anisotropic": _core.ParameterSet.anisotropic}
 _SCALING = {"absolute": _core.Scaling.absolute,
             "relative": _core.Scaling.relative}
-_GEOCENTRIC_RATIO = 0.993277
-
-
-def _direction(component, source, receiver):
+def _direction(component, source, receiver, figure):
     if component == "Z":
         return _core.along(_core.Component.vertical)
     if component == "N":
@@ -34,10 +31,11 @@ def _direction(component, source, receiver):
     if component == "E":
         return _core.along(_core.Component.east)
     if component == "R":
-        return _core.radial_direction(_location(source), _location(receiver))
+        return _core.radial_direction(_location(source), _location(receiver),
+                                      figure)
     if component == "T":
         return _core.transverse_direction(_location(source),
-                                          _location(receiver))
+                                          _location(receiver), figure)
     raise ValueError("component should be Z, N, E, R or T")
 
 
@@ -86,7 +84,10 @@ def traveltimes(model, calculation, source, receiver, measured):
         raise TypeError("traveltimes need one Source and one Receiver")
     measured = [t if t.name else replace(t, name=f"{i + 1}")
                 for i, t in enumerate(measured)]
-    directions = [_direction(t.component, source, receiver) for t in measured]
+    figure = model.figure(calculation.rotation_rate_rad_s,
+                          calculation.latitude_correction)
+    directions = [_direction(t.component, source, receiver, figure)
+                  for t in measured]
     windows = [_core.Window(*t.window_s, t.taper_s) for t in measured]
     calc = calculation._core()
     cores = _core.traveltimes(model._model, calc, source._core(),
@@ -184,21 +185,24 @@ class Sampling:
     """Where three-dimensional kernels are evaluated: nodes in radius at
     places on the sphere."""
 
-    def __init__(self, kind, core):
+    def __init__(self, kind, core, figure=None):
         self.kind = kind
         self._core = core
+        self.figure = figure or _core.HydrostaticFigure.spherical()
 
     def __repr__(self):
         return (f"Sampling({self.kind}: {self._core.node_count} nodes x "
                 f"{self._core.place_count} places)")
 
 
-def volume(model, degree=64, max_element_km=100.0):
+def volume(model, degree=64, max_element_km=100.0, figure=None):
     """The whole earth: at nodes in each layer no further apart than
     `max_element_km`, both sides of each discontinuity included, on a
     Gauss-Legendre grid resolving degree `degree` and at the poles."""
+    figure = figure or model.figure()
     return Sampling("volume", _core.volume_sampling(
-        model._model, _core.VolumeGrid(int(degree), max_element_km * 1e3)))
+        model._model, _core.VolumeGrid(int(degree), max_element_km * 1e3)),
+        figure)
 
 
 def _section_options(margin_deg, half_width_deg, spacing_deg,
@@ -209,38 +213,42 @@ def _section_options(margin_deg, half_width_deg, spacing_deg,
 
 def path_section(model, source, receiver, margin_deg=15.0,
                  half_width_deg=15.0, spacing_deg=0.2,
-                 radial_spacing_km=25.0):
+                 radial_spacing_km=25.0, figure=None):
     """The section along the great circle through the source and the
     receiver, from `margin_deg` before the source to as far beyond the
     receiver, at places `spacing_deg` apart and nodes in each layer no
     further apart than `radial_spacing_km`."""
+    figure = figure or model.figure()
     return Sampling("path", _core.path_section(
         model._model, _location(source), _location(receiver),
         _section_options(margin_deg, half_width_deg, spacing_deg,
-                         radial_spacing_km)))
+                         radial_spacing_km), figure), figure)
 
 
 def cross_section(model, source, receiver, margin_deg=15.0,
                   half_width_deg=15.0, spacing_deg=0.2,
-                  radial_spacing_km=25.0):
+                  radial_spacing_km=25.0, figure=None):
     """The section across the path at its middle, `half_width_deg` to each
     side, spaced as path_section's."""
+    figure = figure or model.figure()
     return Sampling("across", _core.cross_section(
         model._model, _location(source), _location(receiver),
         _section_options(margin_deg, half_width_deg, spacing_deg,
-                         radial_spacing_km)))
+                         radial_spacing_km), figure), figure)
 
 
 def path_maps(model, source, receiver, depths_km, margin_deg=10.0,
-              half_width_deg=15.0, spacing_deg=0.5):
+              half_width_deg=15.0, spacing_deg=0.5, figure=None):
     """Maps at depths (km) about the path, from `margin_deg` before the
     source to as far beyond the receiver and `half_width_deg` to each side,
     at places `spacing_deg` apart. A map at a discontinuity is on its upper
     side."""
     options = _core.MapOptions([d * 1e3 for d in depths_km], margin_deg,
                                half_width_deg, spacing_deg)
+    figure = figure or model.figure()
     return Sampling("maps", _core.path_maps(
-        model._model, _location(source), _location(receiver), options))
+        model._model, _location(source), _location(receiver), options,
+        figure), figure)
 
 
 class SampledKernels:
@@ -260,8 +268,9 @@ class SampledKernels:
         self.radius_km = core.radii / 1e3
         self.depth_km = model.surface_radius_km - self.radius_km
         colatitudes = core.colatitudes
-        self.latitude = np.degrees(np.arctan(
-            np.tan(np.pi / 2 - colatitudes) / _GEOCENTRIC_RATIO))
+        self.latitude = np.array([
+            sampling.figure.geographic_latitude(90 - np.degrees(theta))
+            for theta in colatitudes])
         self.longitude = np.degrees(core.longitudes)
         self.along_deg = core.along
         self.across_deg = core.across
@@ -287,6 +296,17 @@ def sampled_kernels(model, calculation, measurements, samplings,
     single, measurements, source = _measurements(measurements)
     one_sampling = isinstance(samplings, Sampling)
     samplings = [samplings] if one_sampling else list(samplings)
+    expected_figure = model.figure(calculation.rotation_rate_rad_s,
+                                   calculation.latitude_correction)
+    for sampling in samplings:
+        if (sampling.figure.enabled != expected_figure.enabled or
+                sampling.figure.rotation_rate !=
+                expected_figure.rotation_rate or
+                sampling.figure.surface_ellipticity !=
+                expected_figure.surface_ellipticity):
+            raise ValueError(
+                "sampling and calculation use different coordinate figures; "
+                "construct the sampling with model.figure matching the calculation")
     cores = _core.compute_sampled_kernels(
         model._model, calculation._core(), source._core(),
         [m._core for m in measurements],

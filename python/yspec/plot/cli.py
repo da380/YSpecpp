@@ -9,6 +9,7 @@ USAGE = """Pictures of what the YSpec programs write, from the input file of a r
 
   yspec-plot section INPUT [--component Z] [--common] [--gain G]
   yspec-plot traces INPUT [--receivers 1 2 ...] [--components ZRT]
+      [--scale common|independent]
   yspec-plot compare INPUT INPUT ... [--labels ...] [--receiver 1]
   yspec-plot snapshot INPUT [--component up] [--common]
   yspec-plot kernels INPUT [--parameters ...] [--deepest KM]
@@ -54,6 +55,9 @@ def main(argv=None):
     sub.add_argument("input")
     sub.add_argument("--receivers", type=int, nargs="+")
     sub.add_argument("--components", default="ZRT")
+    sub.add_argument("--scale", choices=("common", "independent"),
+                     default="common",
+                     help="share a physical amplitude scale across each receiver's components (default), or scale each independently")
     sub = command("compare", "one receiver in several runs")
     sub.add_argument("inputs", nargs="+")
     sub.add_argument("--labels", nargs="+")
@@ -64,7 +68,7 @@ def main(argv=None):
     sub.add_argument("--component", default="up",
                      choices=["up", "away", "transverse"])
     sub.add_argument("--common", action="store_true",
-                     help="scale every time alike")
+                     help="share colour limits across times")
     sub.add_argument("--no-coastlines", action="store_true",
                      help="leave the coastlines off a map")
     sub = command("kernels", "the radial kernels of a measurement")
@@ -114,7 +118,7 @@ def main(argv=None):
                 common=args.common, gain=args.gain)
         elif args.command == "traces":
             fig = traces(SeismogramRun(args.input, args.source),
-                         args.receivers, args.components)
+                         args.receivers, args.components, scale=args.scale)
         elif args.command == "compare":
             fig = compare(
                 [SeismogramRun(path, args.source) for path in args.inputs],

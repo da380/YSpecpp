@@ -2,6 +2,7 @@
 as the members of an input file give them."""
 
 from dataclasses import dataclass
+import math
 
 from . import _core
 
@@ -10,6 +11,7 @@ _GRAVITY = {"none": _core.Gravity.none, "cowling": _core.Gravity.cowling,
 _QUANTITY = {"displacement": _core.Quantity.displacement,
              "velocity": _core.Quantity.velocity,
              "acceleration": _core.Quantity.acceleration}
+_EARTH_ROTATION_RATE = _core.EARTH_ROTATION_RATE
 
 
 def _choice(name, value, choices):
@@ -54,6 +56,11 @@ class Calculation:
         moves with the ground, and the tilt of its axis.
     tolerance
         The relative tolerance of the radial integrations.
+    latitude_correction
+        Use the first-order hydrostatic figure computed from the model density
+        and rotation rate for geographic coordinates. True by default.
+    rotation_rate_rad_s
+        The uniform rotation rate (rad/s) used by the hydrostatic figure.
     """
 
     degrees: int | tuple[int, int]
@@ -66,6 +73,8 @@ class Calculation:
     quantity: str = "displacement"
     corrections: bool = False
     tolerance: float = 1e-5
+    latitude_correction: bool = True
+    rotation_rate_rad_s: float = _EARTH_ROTATION_RATE
 
     def _core(self):
         """The calculation for the library, in SI units, checked as an input
@@ -97,6 +106,11 @@ class Calculation:
         c.attenuation = bool(self.attenuation)
         c.quantity = _choice("quantity", self.quantity, _QUANTITY)
         c.corrections = bool(self.corrections)
+        c.latitude_correction = bool(self.latitude_correction)
+        if not (math.isfinite(self.rotation_rate_rad_s)
+                and self.rotation_rate_rad_s >= 0):
+            raise ValueError("rotation_rate_rad_s should be finite and non-negative")
+        c.rotation_rate = float(self.rotation_rate_rad_s)
         if not 0 < self.tolerance < 1:
             raise ValueError("tolerance should lie between 0 and 1")
         c.solver = _core.SolverOptions(tolerance=self.tolerance)
